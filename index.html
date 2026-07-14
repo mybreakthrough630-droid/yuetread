@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f1ea" />
+    <title>粵讀 · 智能提詞器</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;500;600;700&amp;family=Noto+Serif+HK:wght@600;700&amp;display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="粵讀首頁">
+          <span class="brand-mark">粵</span>
+          <span>粵讀 <small>智能提詞器</small></span>
+        </a>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">為粵語創作者而設</p>
+            <h1>你講幾快，<em>字幕就跟幾快。</em></h1>
+            <p class="hero-copy">將粵語內容轉成清晰的書面語字幕，實時追蹤朗讀進度，讓每一次表達都自然流暢。</p>
+          </div>
+          <div class="sound-orbit" aria-hidden="true">
+            <div class="orbit-ring"></div>
+            <div class="sound-core"><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+        </section>
+
+        <section class="workspace-grid">
+          <div class="source-card card">
+            <div class="section-heading">
+              <div>
+                <p class="step-label">01 · 準備內容</p>
+                <h2>加入你的稿件</h2>
+              </div>
+              <div class="tabs" role="tablist">
+                <button class="tab active" data-tab="text">貼上文字</button>
+                <button class="tab" data-tab="audio">上載音訊</button>
+              </div>
+            </div>
+
+            <div id="textPanel" class="tab-panel active">
+              <label class="input-label" for="sourceText">粵語口語稿</label>
+              <textarea id="sourceText" maxlength="20000" placeholder="喺度貼上你嘅粵語稿件…">大家好，歡迎嚟到今日嘅分享。今次我想同大家講下，點樣可以令自己嘅表達更加自然。其實最緊要嘅，唔係講得快，而係搵到啱自己嘅節奏。當你慢慢建立信心，每一句說話都會更加有力量。</textarea>
+              <div class="textarea-meta">
+                <button class="text-btn" id="importTextBtn">＋ 匯入 TXT / SRT</button>
+                <span><b id="charCount">0</b> / 20000</span>
+              </div>
+              <div class="conversion-actions" aria-label="雙向轉換">
+                <button id="toMandarinBtn"><span>粵語口稿</span><b>↓ 生成</b><span>普通話口稿</span></button>
+                <button id="toCantoneseBtn"><span>普通話口稿</span><b>↑ 生成</b><span>粵語口稿</span></button>
+              </div>
+              <div class="conversion-panel">
+                <div class="conversion-head">
+                  <label class="input-label" for="convertedText">普通話口稿（書面語）</label>
+                  <span class="auto-badge">智能轉換 · 可修改</span>
+                </div>
+                <textarea id="convertedText" maxlength="20000" placeholder="普通話口稿會在這裡自動生成…"></textarea>
+                <div class="textarea-meta">
+                  <button class="text-btn" id="reconvertBtn">↻ 重新轉換</button>
+                  <span>修改後會用作字幕內容</span>
+                </div>
+              </div>
+              <input id="textFileInput" type="file" accept=".txt,.srt,.vtt,text/plain" hidden />
+            </div>
+
+            <div id="audioPanel" class="tab-panel">
+              <div class="dropzone" id="dropzone">
+                <div class="upload-icon">⌁</div>
+                <strong>拖放音訊到這裡</strong>
+                <p>或點擊選擇 MP3、WAV、M4A</p>
+                <button class="outline-btn" id="chooseAudioBtn">選擇音訊</button>
+                <input id="audioFileInput" type="file" accept="audio/*" hidden />
+              </div>
+              <div class="audio-ready" id="audioReady" hidden>
+                <div><span class="file-icon">♪</span><div><strong id="audioName">audio.mp3</strong><small id="audioSize"></small></div></div>
+                <button class="icon-btn" id="removeAudioBtn" aria-label="移除音訊">×</button>
+                <audio id="audioPlayer" controls></audio>
+                <button class="audio-transcribe-btn" id="audioTranscribeBtn">◎ 從音訊辨識粵語字幕</button>
+                <p class="audio-hint">可一邊播放音訊，一邊使用「麥克風辨識」擷取字幕；貼上原稿可獲得最準確結果。</p>
+              </div>
+            </div>
+
+            <div class="convert-row">
+              <label class="switch-line"><input id="convertMandarin" type="checkbox" checked /><span class="switch"></span> 同步使用普通話口稿字幕</label>
+              <button class="generate-btn" id="generateBtn">生成字幕 <span>→</span></button>
+            </div>
+
+            <section class="script-library">
+              <div class="library-head">
+                <div><p class="step-label">口報文稿庫</p><h3>保存你的所有文稿</h3></div>
+                <span id="scriptCount">0 份文稿</span>
+              </div>
+              <div class="save-script-row">
+                <input id="scriptTitle" type="text" maxlength="40" placeholder="文稿名稱（例如：星期五產品介紹）" />
+                <button class="outline-btn save-script-btn" id="saveScriptBtn">＋ 儲存目前文稿</button>
+              </div>
+              <div class="script-list" id="scriptList"></div>
+              <p class="local-note">文稿只會儲存在這部裝置的瀏覽器內。</p>
+            </section>
+          </div>
+
+          <aside class="settings-card card">
+            <div class="section-heading compact">
+              <div><p class="step-label">02 · 個人化</p><h2>提詞設定</h2></div>
+              <button class="icon-btn" id="resetSettingsBtn" title="重設">↻</button>
+            </div>
+
+            <div class="setting-group">
+              <label>字幕樣式</label>
+              <div class="segmented" id="themePicker">
+                <button class="active" data-value="light"><span class="theme-dot light"></span>明亮</button>
+                <button data-value="dark"><span class="theme-dot dark"></span>深色</button>
+                <button data-value="focus"><span class="theme-dot focus"></span>專注</button>
+              </div>
+            </div>
+            <div class="setting-group">
+              <div class="range-label"><label for="fontSize">文字大小</label><output id="fontSizeOutput">42 px</output></div>
+              <input id="fontSize" type="range" min="28" max="72" value="42" />
+            </div>
+            <div class="setting-group">
+              <label>顯示位置</label>
+              <div class="position-picker" id="positionPicker">
+                <button data-value="top">上</button><button data-value="center" class="active">中</button><button data-value="bottom">下</button>
+              </div>
+            </div>
+            <div class="setting-group">
+              <div class="range-label"><label for="frequency">提示頻率</label><output id="frequencyOutput">適中</output></div>
+              <input id="frequency" type="range" min="1" max="3" value="2" />
+              <div class="range-ends"><span>較少</span><span>較多</span></div>
+            </div>
+            <label class="switch-line boxed"><input id="showNext" type="checkbox" checked /><span class="switch"></span><span><b>預覽下一句</b><small>提前顯示即將朗讀的內容</small></span></label>
+          </aside>
+        </section>
+
+        <section class="prompter-section" id="prompterSection">
+          <div class="section-heading preview-heading">
+            <div><p class="step-label">03 · 開始朗讀</p><h2>同步提詞預覽</h2></div>
+            <div class="preview-tools">
+              <div class="subtitle-language" id="subtitleLanguage" aria-label="字幕語言">
+                <button class="active" data-language="cantonese">粵語字幕</button>
+                <button data-language="mandarin">普通話字幕</button>
+              </div>
+              <div class="live-stats"><span id="statusDot"></span><b id="trackingStatus">準備就緒</b><span class="divider"></span><span id="speedStat">— 字/分鐘</span></div>
+            </div>
+          </div>
+
+          <div class="prompter light center" id="prompter">
+            <div class="tracking-legend" aria-label="逐字追蹤顏色說明"><span><i class="pending"></i>未讀</span><span><i class="active"></i>正在聽</span><span><i class="read"></i>已跟上</span></div>
+            <div class="speech-actions">
+              <button id="speakCantoneseBtn" title="用電腦朗讀目前粵語句子">◖)) 粵語朗讀</button>
+              <button id="speakMandarinBtn" title="用電腦朗讀目前普通話句子">◖)) 普通話朗讀</button>
+            </div>
+            <div class="safe-area">
+              <div class="prompt-content">
+                <div class="prompt-copy" id="promptCopy"></div>
+              </div>
+            </div>
+            <div class="prompter-controls">
+              <button class="round-btn" id="prevBtn" aria-label="上一句">‹</button>
+              <button class="mic-btn" id="micBtn"><span class="mic-symbol">●</span><span id="micLabel">開始朗讀</span></button>
+              <button class="round-btn" id="nextBtn" aria-label="下一句">›</button>
+            </div>
+            <div class="progress-track"><i id="progressBar"></i></div>
+          </div>
+          <p class="privacy-note">🔒 本應用不儲存語音；辨識音訊的處理方式以你的瀏覽器服務條款為準。</p>
+        </section>
+      </main>
+
+      <footer><span>粵讀 YuetRead</span><p>讓每一句粵語，都被清楚看見。</p><span>本地優先 · 私隱保障</span></footer>
+    </div>
+
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="editor-drawer" id="editorDrawer" aria-hidden="true">
+      <div class="drawer-head"><div><p class="step-label">字幕工作台</p><h2>編輯字幕</h2></div><button class="icon-btn" id="closeEditorBtn">×</button></div>
+      <p class="drawer-copy">直接修改每句書面語字幕。修改會即時套用到提詞畫面。</p>
+      <div class="editor-list" id="editorList"></div>
+      <div class="drawer-actions"><button class="outline-btn" id="addLineBtn">＋ 新增一句</button><button class="primary-btn" id="saveEditorBtn">完成</button></div>
+    </aside>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="vendor/opencc-cn2t.js"></script>
+    <script src="vendor/pinyin-pro.js"></script>
+    <script src="vendor/pinyin-data.js"></script>
+    <script src="vendor/to-jyutping.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
