@@ -70,6 +70,7 @@ const state = {
 const SCRIPT_LIBRARY_KEY = 'yuetread_scripts_v1';
 const AUTH_PROFILE_KEY = 'yuetread_auth_v1';
 const AUTH_SESSION_KEY = 'yuetread_authenticated_v1';
+let authMode = 'login';
 
 function readAuthProfile() {
   try {
@@ -104,15 +105,20 @@ async function hashPassword(password, salt) {
   return [...new Uint8Array(bits)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function setAuthMode(profile) {
-  const isSetup = !profile;
-  $('#authEyebrow').textContent = isSetup ? '第一次使用' : '歡迎返嚟';
-  $('#authTitle').textContent = isSetup ? '建立你的登入帳戶' : '登入你的工作空間';
-  $('#authDescription').textContent = isSetup ? '設定登入名稱及密碼，下次就可以安全地返回文稿。' : '輸入名稱及密碼，繼續準備你的口報文稿。';
-  $('#authSubmit').textContent = isSetup ? '建立帳戶並進入' : '登入';
-  $('#authConfirmGroup').hidden = !isSetup;
-  $('#authPasswordConfirm').required = isSetup;
-  $('#authPassword').autocomplete = isSetup ? 'new-password' : 'current-password';
+function setAuthMode(profile, mode = profile ? 'login' : 'setup') {
+  authMode = mode;
+  const isSetup = mode === 'setup';
+  const isReset = mode === 'reset';
+  $('#authEyebrow').textContent = isSetup ? '第一次使用' : isReset ? '本機帳戶復原' : '歡迎返嚟';
+  $('#authTitle').textContent = isSetup ? '建立你的登入帳戶' : isReset ? '設定新的登入密碼' : '登入你的工作空間';
+  $('#authDescription').textContent = isSetup ? '設定登入名稱及密碼，下次就可以安全地返回文稿。' : isReset ? '輸入兩次新密碼；原有口報文稿會繼續保留。' : '輸入名稱及密碼，繼續準備你的口報文稿。';
+  $('#authSubmit').textContent = isSetup ? '建立帳戶並進入' : isReset ? '重設密碼並登入' : '登入';
+  $('#authConfirmGroup').hidden = !isSetup && !isReset;
+  $('#authPasswordConfirm').required = isSetup || isReset;
+  $('#authPassword').autocomplete = isSetup || isReset ? 'new-password' : 'current-password';
+  $('#authUsername').readOnly = isReset;
+  $('#authResetBtn').hidden = isSetup;
+  $('#authResetBtn').textContent = isReset ? '返回登入' : '忘記密碼？重設密碼';
   if (profile) $('#authUsername').value = profile.username;
 }
 
@@ -144,17 +150,18 @@ async function submitAuth(event) {
   const confirmPassword = $('#authPasswordConfirm').value;
   const error = $('#authError');
   const submit = $('#authSubmit');
+  const isCreatingPassword = authMode === 'setup' || authMode === 'reset';
   error.textContent = '';
   if (username.length < 2) return void (error.textContent = '登入名稱最少需要 2 個字元。');
   if (password.length < 6) return void (error.textContent = '密碼最少需要 6 個字元。');
-  if (!profile && password !== confirmPassword) return void (error.textContent = '兩次輸入嘅密碼並不相同。');
+  if (isCreatingPassword && password !== confirmPassword) return void (error.textContent = '兩次輸入嘅密碼並不相同。');
   submit.disabled = true;
-  submit.textContent = profile ? '正在登入…' : '正在建立…';
+  submit.textContent = authMode === 'login' ? '正在登入…' : authMode === 'reset' ? '正在重設…' : '正在建立…';
   try {
-    if (!profile) {
+    if (isCreatingPassword) {
       const salt = randomSalt();
       const hash = await hashPassword(password, salt);
-      localStorage.setItem(AUTH_PROFILE_KEY, JSON.stringify({ username, salt, hash, version: 1 }));
+      localStorage.setItem(AUTH_PROFILE_KEY, JSON.stringify({ username: profile?.username || username, salt, hash, version: 1 }));
     } else {
       const hash = await hashPassword(password, profile.salt);
       if (username !== profile.username || hash !== profile.hash) {
@@ -168,7 +175,7 @@ async function submitAuth(event) {
     error.textContent = '瀏覽器未能保存登入資料，請檢查私隱設定。';
   } finally {
     submit.disabled = false;
-    submit.textContent = readAuthProfile() ? '登入' : '建立帳戶並進入';
+    submit.textContent = authMode === 'reset' ? '重設密碼並登入' : authMode === 'setup' ? '建立帳戶並進入' : '登入';
   }
 }
 
@@ -179,6 +186,14 @@ function initAuth() {
     const type = event.target.checked ? 'text' : 'password';
     $('#authPassword').type = type;
     $('#authPasswordConfirm').type = type;
+  });
+  $('#authResetBtn').addEventListener('click', () => {
+    const currentProfile = readAuthProfile();
+    setAuthMode(currentProfile, authMode === 'reset' ? 'login' : 'reset');
+    $('#authError').textContent = '';
+    $('#authPassword').value = '';
+    $('#authPasswordConfirm').value = '';
+    $('#authPassword').focus();
   });
   $('#logoutBtn').addEventListener('click', () => {
     if (state.listening) stopListening(false);
