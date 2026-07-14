@@ -70,6 +70,14 @@ const state = {
 const SCRIPT_LIBRARY_KEY = 'yuetread_scripts_v1';
 const AUTH_PROFILE_KEY = 'yuetread_auth_v1';
 const AUTH_SESSION_KEY = 'yuetread_authenticated_v1';
+const AUTH_CREDENTIALS_VERSION = 2;
+const DEFAULT_AUTH_PROFILE = Object.freeze({
+  username: 'kkm',
+  salt: 'yuetread-shared-v2-20260714',
+  hash: 'b0681e082c6e8fba674ac425eb28020529305a0aa67baee2b65f579fe9eacf01',
+  version: 1,
+  credentialsVersion: AUTH_CREDENTIALS_VERSION
+});
 let authMode = 'login';
 
 function readAuthProfile() {
@@ -77,6 +85,16 @@ function readAuthProfile() {
     const profile = JSON.parse(localStorage.getItem(AUTH_PROFILE_KEY) || 'null');
     return profile?.username && profile?.salt && profile?.hash ? profile : null;
   } catch (_) { return null; }
+}
+
+function ensureConfiguredAuthProfile() {
+  const profile = readAuthProfile();
+  if (profile?.credentialsVersion === AUTH_CREDENTIALS_VERSION) return profile;
+  try {
+    localStorage.setItem(AUTH_PROFILE_KEY, JSON.stringify(DEFAULT_AUTH_PROFILE));
+    sessionStorage.removeItem(AUTH_SESSION_KEY);
+    return DEFAULT_AUTH_PROFILE;
+  } catch (_) { return profile; }
 }
 
 function randomSalt() {
@@ -131,7 +149,7 @@ function unlockApp(username) {
 }
 
 function showLogin() {
-  const profile = readAuthProfile();
+  const profile = ensureConfiguredAuthProfile();
   setAuthMode(profile);
   $('#authError').textContent = '';
   $('#authPassword').value = '';
@@ -161,7 +179,7 @@ async function submitAuth(event) {
     if (isCreatingPassword) {
       const salt = randomSalt();
       const hash = await hashPassword(password, salt);
-      localStorage.setItem(AUTH_PROFILE_KEY, JSON.stringify({ username: profile?.username || username, salt, hash, version: 1 }));
+      localStorage.setItem(AUTH_PROFILE_KEY, JSON.stringify({ username: profile?.username || username, salt, hash, version: 1, credentialsVersion: AUTH_CREDENTIALS_VERSION }));
     } else {
       const hash = await hashPassword(password, profile.salt);
       if (username !== profile.username || hash !== profile.hash) {
@@ -180,7 +198,7 @@ async function submitAuth(event) {
 }
 
 function initAuth() {
-  const profile = readAuthProfile();
+  const profile = ensureConfiguredAuthProfile();
   $('#authForm').addEventListener('submit', submitAuth);
   $('#showPassword').addEventListener('change', event => {
     const type = event.target.checked ? 'text' : 'password';
