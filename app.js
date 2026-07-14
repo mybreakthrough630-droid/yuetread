@@ -340,18 +340,27 @@ function scoreVoice(voice, language) {
   }
   if (/mandarin|putonghua|普通話|普通话|國語|国语|ting[- ]?ting|cmn[-_]|zh[-_]CN/i.test(identity)) return -1000;
   if (/cantonese|粵語|粤语|sin[- ]?ji|yue[-_]/i.test(identity)) return 120;
-  if (/^zh[-_]HK/i.test(voice.lang)) return 100;
+  if (/^zh(?:[-_]Hant)?[-_]HK/i.test(voice.lang)) return 100;
   return -1;
 }
 
 async function availableSpeechVoices() {
-  let voices = window.speechSynthesis.getVoices();
-  if (voices.length) return voices;
-  await new Promise(resolve => {
-    const timer = setTimeout(resolve, 700);
-    window.speechSynthesis.addEventListener('voiceschanged', () => { clearTimeout(timer); resolve(); }, { once: true });
+  const getVoices = () => window.speechSynthesis.getVoices();
+  const initialVoices = getVoices();
+  if (initialVoices.length) return initialVoices;
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true; clearInterval(poll); clearTimeout(timer);
+      window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+      resolve(getVoices());
+    };
+    const handleVoicesChanged = () => { if (getVoices().length) finish(); };
+    const poll = setInterval(handleVoicesChanged, 200);
+    const timer = setTimeout(finish, 2500);
+    window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
   });
-  return window.speechSynthesis.getVoices();
 }
 
 async function speakCurrent(language) {
@@ -361,12 +370,16 @@ async function speakCurrent(language) {
   window.speechSynthesis.cancel();
   const text = language === 'cantonese' ? segment.source : segment.text;
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = language === 'cantonese' ? 'yue-HK' : 'cmn-CN';
+  utterance.lang = language === 'cantonese' ? 'zh-HK' : 'zh-CN';
   const voices = await availableSpeechVoices();
   const ranked = voices.map(voice => ({ voice, score: scoreVoice(voice, language) })).filter(item => item.score >= 0).sort((a,b) => b.score-a.score);
   const selectedVoice = ranked[0]?.voice;
-  if (selectedVoice) { utterance.voice = selectedVoice; utterance.lang = selectedVoice.lang; }
   const button = language === 'cantonese' ? $('#speakCantoneseBtn') : $('#speakMandarinBtn');
+  if (language === 'cantonese' && !selectedVoice) {
+    button.classList.remove('speaking');
+    return toast('此手機未安裝香港粵語聲線，請在系統「文字轉語音」設定下載廣東話（香港）');
+  }
+  if (selectedVoice) { utterance.voice = selectedVoice; utterance.lang = selectedVoice.lang; }
   $$('.speech-actions button').forEach(item => item.classList.remove('speaking'));
   button.classList.add('speaking');
   utterance.onstart = () => toast(`${language === 'cantonese' ? '粵語' : '普通話'}朗讀${selectedVoice ? ` · ${selectedVoice.name}` : ''}`);
@@ -541,11 +554,20 @@ function setupRecognition() {
   const recognition = new SpeechRecognition();
   let sessionTranscript = '';
   let fatalError = false;
-  recognition.lang = 'yue-Hant-HK'; recognition.continuous = !browser.isIOS; recognition.interimResults = true; recognition.maxAlternatives = 1;
-  recognition.onstart = () => { sessionTranscript = ''; fatalError = false; };
+  let emptyCycles = 0;
+  let languageIndex = 0;
+  const recognitionLanguages = browser.isAndroid ? ['yue-Hant-HK', 'zh-HK'] : ['yue-Hant-HK'];
+  recognition.lang = recognitionLanguages[languageIndex]; recognition.continuous = !browser.isMobile; recognition.interimResults = true; recognition.maxAlternatives = 1;
+  recognition.onstart = () => {
+    sessionTranscript = ''; fatalError = false;
+    if (state.listening) $('#trackingStatus').textContent = '正在聆聽，請開始朗讀';
+  };
+  recognition.onaudiostart = () => { if (state.listening) $('#trackingStatus').textContent = '咪高峰已連接'; };
+  recognition.onspeechstart = () => { if (state.listening) $('#trackingStatus').textContent = '正在辨識粵語'; };
   recognition.onresult = event => {
     sessionTranscript = '';
     for (let i = 0; i < event.results.length; i++) sessionTranscript += event.results[i][0].transcript;
+    if (sessionTranscript.trim()) emptyCycles = 0;
     trackSpeech(`${state.recognitionTranscript}${sessionTranscript}`);
   };
   recognition.onerror = event => {
@@ -575,10 +597,19 @@ function setupRecognition() {
     if (sessionTranscript) {
       state.recognitionTranscript += sessionTranscript;
       sessionTranscript = '';
-    }
+      emptyCycles = 0;
+    } else emptyCycles++;
     if (!state.listening || fatalError || state.recognition !== recognition) return;
+    if (browser.isAndroid && emptyCycles >= 2 && languageIndex < recognitionLanguages.length - 1) {
+      languageIndex++; recognition.lang = recognitionLanguages[languageIndex]; emptyCycles = 0;
+      toast('已切換 Android 粵語兼容模式');
+    } else if (browser.isAndroid && emptyCycles >= 3) {
+      stopListening(false); showBrowserNotice(true);
+      $('#trackingStatus').textContent = '未收到咪高峰語音';
+      return toast('未收到語音，請確認 Chrome 嘅網站及應用程式咪高峰權限已允許');
+    }
     clearTimeout(state.recognitionRestartTimer);
-    $('#trackingStatus').textContent = '正在重新連接語音';
+    $('#trackingStatus').textContent = browser.isMobile ? '正在聆聽，請繼續朗讀' : '正在重新連接語音';
     state.recognitionRestartTimer = setTimeout(() => {
       if (!state.listening || state.recognition !== recognition) return;
       try { recognition.start(); }
@@ -587,7 +618,7 @@ function setupRecognition() {
         $('#trackingStatus').textContent = '請再按一次繼續朗讀';
         toast('Safari 已暫停語音服務，請再按一次「繼續朗讀」');
       }
-    }, browser.isIOS ? 350 : 120);
+    }, browser.isMobile ? 450 : 120);
   };
   return recognition;
 }
