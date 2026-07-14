@@ -61,7 +61,7 @@ const cantoneseJyutping = {
 
 const state = {
   segments: [], current: 0, listening: false, recognition: null,
-  startedAt: 0, heardChars: 0, speed: 0, theme: 'light', position: 'center', frequency: 2,
+  startedAt: 0, heardChars: 0, speed: 0, theme: 'light', position: 'top', frequency: 2,
   fontSize: 42, showNext: true, audioUrl: null,
   matchedChars: 0, matchConfidence: 0, segmentStartAt: 0, lastTranscriptLength: 0,
   pendingAdvance: false, scripts: [], renderedSignature: '', subtitleLanguage: 'cantonese', lineFrame: 0,
@@ -849,7 +849,7 @@ function init() {
   $('#showNext').addEventListener('change',e=>{state.showNext=e.target.checked;renderPrompt();});
   $('#themePicker').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;$$('button',$('#themePicker')).forEach(x=>x.classList.toggle('active',x===b));$('#prompter').classList.remove('light','dark','focus');$('#prompter').classList.add(b.dataset.value);});
   $('#positionPicker').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;$$('button',$('#positionPicker')).forEach(x=>x.classList.toggle('active',x===b));$('#prompter').classList.remove('top','center','bottom');$('#prompter').classList.add(b.dataset.value);});
-  $('#resetSettingsBtn').addEventListener('click',()=>{ $('#fontSize').value=42;$('#fontSize').dispatchEvent(new Event('input'));$('#frequency').value=2;$('#frequency').dispatchEvent(new Event('input'));$('#showNext').checked=true;state.showNext=true;$('#themePicker [data-value="light"]').click();$('#positionPicker [data-value="center"]').click();renderPrompt();toast('已重設提詞設定');});
+  $('#resetSettingsBtn').addEventListener('click',()=>{ $('#fontSize').value=42;$('#fontSize').dispatchEvent(new Event('input'));$('#frequency').value=2;$('#frequency').dispatchEvent(new Event('input'));$('#showNext').checked=true;state.showNext=true;$('#themePicker [data-value="light"]').click();$('#positionPicker [data-value="top"]').click();renderPrompt();toast('已重設提詞設定');});
   $('#importTextBtn').addEventListener('click',()=>$('#textFileInput').click());
   $('#textFileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(f){$('#sourceText').value=await f.text();$('#sourceText').dispatchEvent(new Event('input'));toast(`已匯入 ${f.name}`);}});
   $('#chooseAudioBtn').addEventListener('click',()=>$('#audioFileInput').click()); $('#audioFileInput').addEventListener('change',e=>handleAudio(e.target.files[0]));
