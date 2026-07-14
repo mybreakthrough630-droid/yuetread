@@ -475,20 +475,53 @@ function navigate(delta) {
 function getBrowserInfo() {
   const userAgent = navigator.userAgent || '';
   const isIOS = /iPad|iPhone|iPod/i.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const isEmbedded = /(WhatsApp|FBAN|FBAV|Instagram|Line\/|MicroMessenger)/i.test(userAgent);
+  const isAndroid = /Android/i.test(userAgent);
+  const isEmbedded = /(; wv\)|\bwv\b|WhatsApp|FBAN|FBAV|Instagram|Line\/|MicroMessenger)/i.test(userAgent);
   const isSafari = /Safari/i.test(userAgent) && !/(CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo)/i.test(userAgent) && !isEmbedded;
-  return { isIOS, isEmbedded, isSafari, requiresSafari: isIOS && (!isSafari || isEmbedded) };
+  const isChrome = /(Chrome|CriOS)\//i.test(userAgent) && !/(EdgA|EdgiOS|OPR|SamsungBrowser)/i.test(userAgent) && !isEmbedded;
+  const preferredBrowser = isIOS ? 'Safari' : isAndroid ? 'Chrome' : '系統瀏覽器';
+  const requiresPreferredBrowser = isEmbedded || (isIOS && !isSafari) || (isAndroid && !isChrome);
+  return { isIOS, isAndroid, isMobile: isIOS || isAndroid, isEmbedded, isSafari, isChrome, preferredBrowser, requiresPreferredBrowser };
 }
 
 function showBrowserNotice(force = false) {
   const notice = $('#browserNotice');
   const browser = getBrowserInfo();
-  notice.hidden = !(force || browser.requiresSafari);
+  const needsSwitch = browser.requiresPreferredBrowser;
+  notice.hidden = !(force || needsSwitch);
+  if (!notice.hidden) {
+    if (browser.isAndroid && needsSwitch) {
+      $('#browserNoticeTitle').textContent = '請用 Chrome 開啟語音追蹤';
+      $('#browserNoticeText').textContent = 'WhatsApp、Facebook 等內置瀏覽器會中斷 Android 語音識別。請直接用 Chrome 開啟，並允許咪高峰。';
+    } else if (browser.isAndroid) {
+      $('#browserNoticeTitle').textContent = '請檢查 Chrome 咪高峰權限';
+      $('#browserNoticeText').textContent = '請在 Chrome 網站設定允許咪高峰，然後重新按「繼續朗讀」。';
+    } else if (browser.isIOS && needsSwitch) {
+      $('#browserNoticeTitle').textContent = '請用 Safari 開啟語音追蹤';
+      $('#browserNoticeText').textContent = 'WhatsApp 等內置瀏覽器會中斷 iPhone 語音識別。請複製網址到 Safari，並允許咪高峰及確認 Siri 已啟用。';
+    } else if (browser.isIOS) {
+      $('#browserNoticeTitle').textContent = '請檢查 Safari 語音設定';
+      $('#browserNoticeText').textContent = '請允許 Safari 使用咪高峰，並確認 iPhone 已啟用 Siri。';
+    } else {
+      $('#browserNoticeTitle').textContent = '請用系統瀏覽器開啟語音追蹤';
+      $('#browserNoticeText').textContent = '內置瀏覽器可能會中斷語音識別，請複製網址到 Chrome 或 Safari。';
+    }
+    const openButton = $('#openPreferredBrowserBtn');
+    openButton.hidden = !browser.isAndroid || browser.isChrome;
+    if (!openButton.hidden) {
+      const target = getShareableUrl().replace(/^https?:\/\//, '');
+      openButton.href = `intent://${target}#Intent;scheme=https;package=com.android.chrome;end`;
+    }
+  }
   return browser;
 }
 
+function getShareableUrl() {
+  return location.protocol === 'file:' ? 'https://mybreakthrough630-droid.github.io/yuetread/' : location.href.split('#')[0];
+}
+
 async function copySiteUrl() {
-  const url = location.protocol === 'file:' ? 'https://mybreakthrough630-droid.github.io/yuetread/' : location.href.split('#')[0];
+  const url = getShareableUrl();
   try {
     await navigator.clipboard.writeText(url);
   } catch (_) {
@@ -526,14 +559,14 @@ function setupRecognition() {
     }
     fatalError = true;
     const messages = {
-      'not-allowed': '請在 Safari 允許咪高峰權限，再按「繼續朗讀」',
-      'service-not-allowed': '請確認 iPhone 已啟用 Siri，並使用 Safari 開啟',
-      'audio-capture': '未能使用咪高峰，請檢查 iPhone 私隱設定',
+      'not-allowed': `請在 ${browser.preferredBrowser} 允許咪高峰權限，再按「繼續朗讀」`,
+      'service-not-allowed': browser.isIOS ? '請確認 iPhone 已啟用 Siri，並使用 Safari 開啟' : '請使用 Chrome 開啟，並允許網站使用咪高峰',
+      'audio-capture': '未能使用咪高峰，請檢查手機私隱及應用程式權限',
       'network': '語音服務連線失敗，請檢查網絡後再試',
       'language-not-supported': '此裝置暫未支援粵語語音識別'
     };
     const message = messages[event.error] || `語音識別中斷（${event.error || '未知錯誤'}）`;
-    if (browser.isIOS) showBrowserNotice(browser.requiresSafari || event.error === 'service-not-allowed');
+    if (browser.isMobile) showBrowserNotice(browser.requiresPreferredBrowser || event.error === 'service-not-allowed' || event.error === 'not-allowed');
     stopListening(false);
     $('#trackingStatus').textContent = '語音識別未連接';
     toast(message);
@@ -617,14 +650,14 @@ function startListening() {
   if (!state.segments.length) generateSegments();
   if (!state.segments.length) return;
   const browser = showBrowserNotice();
-  if (browser.requiresSafari) {
-    $('#trackingStatus').textContent = '需要使用 Safari';
-    return toast('WhatsApp 內置瀏覽器未能穩定使用語音識別，請複製網址到 Safari 開啟');
+  if (browser.requiresPreferredBrowser) {
+    $('#trackingStatus').textContent = `需要使用 ${browser.preferredBrowser}`;
+    return toast(`內置瀏覽器未能穩定使用語音識別，請改用 ${browser.preferredBrowser} 開啟`);
   }
   if (!state.recognition) state.recognition = setupRecognition();
   if (!state.recognition) {
-    if (browser.isIOS) showBrowserNotice(true);
-    return toast(browser.isIOS ? '請使用 Safari，並確認 iPhone 已啟用 Siri' : '此瀏覽器不支援語音辨識，請使用 Chrome');
+    if (browser.isMobile) showBrowserNotice(true);
+    return toast(browser.isIOS ? '請使用 Safari，並確認 iPhone 已啟用 Siri' : '此瀏覽器不支援語音辨識，請使用最新版 Chrome');
   }
   state.listening = true; state.startedAt = Date.now(); state.heardChars = 0;
   state.lastTranscriptLength = 0; state.segmentStartAt = 0; state.recognitionTranscript = '';
@@ -632,7 +665,7 @@ function startListening() {
   catch (_) {
     state.listening = false; state.recognition = null;
     $('#trackingStatus').textContent = '語音識別未能啟動';
-    return toast(browser.isIOS ? 'Safari 未能啟動語音服務，請檢查咪高峰及 Siri 設定' : '語音識別未能啟動，請再試一次');
+    return toast(browser.isIOS ? 'Safari 未能啟動語音服務，請檢查咪高峰及 Siri 設定' : 'Chrome 未能啟動語音服務，請檢查咪高峰權限');
   }
   $('#micBtn').classList.add('listening'); $('#micLabel').textContent = '暫停追蹤';
   $('.live-stats').classList.add('active'); $('#trackingStatus').textContent = '正在跟隨語速';
