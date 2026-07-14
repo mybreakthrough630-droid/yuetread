@@ -11,12 +11,51 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <section class="auth-screen" id="authScreen" aria-labelledby="authTitle">
+      <div class="auth-card">
+        <div class="auth-form-panel">
+          <a class="auth-brand" href="#" aria-label="粵讀登入頁">
+            <span class="brand-mark">粵</span>
+            <span>粵讀 <small>智能提詞器</small></span>
+          </a>
+          <div class="auth-copy">
+            <p class="eyebrow" id="authEyebrow">歡迎使用粵讀</p>
+            <h1 id="authTitle">登入你的工作空間</h1>
+            <p id="authDescription">輸入名稱及密碼，繼續準備你的口報文稿。</p>
+          </div>
+          <form class="auth-form" id="authForm" novalidate>
+            <label for="authUsername">登入名稱</label>
+            <input id="authUsername" name="username" type="text" maxlength="40" autocomplete="username" placeholder="輸入你的名稱" required />
+            <label for="authPassword">密碼</label>
+            <input id="authPassword" name="password" type="password" minlength="6" maxlength="128" autocomplete="current-password" placeholder="最少 6 個字元" required />
+            <div class="auth-confirm" id="authConfirmGroup" hidden>
+              <label for="authPasswordConfirm">確認密碼</label>
+              <input id="authPasswordConfirm" name="password-confirm" type="password" minlength="6" maxlength="128" autocomplete="new-password" placeholder="再次輸入密碼" />
+            </div>
+            <label class="show-password"><input id="showPassword" type="checkbox" /> 顯示密碼</label>
+            <p class="auth-error" id="authError" role="alert" aria-live="polite"></p>
+            <button class="auth-submit" id="authSubmit" type="submit">登入</button>
+          </form>
+          <p class="auth-local-note">🔒 帳戶資料只會儲存在這部裝置；密碼不會以原文保存。</p>
+        </div>
+        <div class="auth-visual" aria-hidden="true">
+          <div class="auth-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <blockquote>「每一句粵語，<br />都值得被清楚看見。」</blockquote>
+          <span>本地優先 · 私隱保障</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="app-shell" id="appShell" hidden>
       <header class="topbar">
         <a class="brand" href="#" aria-label="粵讀首頁">
           <span class="brand-mark">粵</span>
           <span>粵讀 <small>智能提詞器</small></span>
         </a>
+        <div class="top-actions">
+          <span class="user-pill" id="currentUser"></span>
+          <button class="ghost-btn logout-btn" id="logoutBtn" type="button">登出</button>
+        </div>
       </header>
 
       <main>

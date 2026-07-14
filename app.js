@@ -68,6 +68,127 @@ const state = {
 };
 
 const SCRIPT_LIBRARY_KEY = 'yuetread_scripts_v1';
+const AUTH_PROFILE_KEY = 'yuetread_auth_v1';
+const AUTH_SESSION_KEY = 'yuetread_authenticated_v1';
+
+function readAuthProfile() {
+  try {
+    const profile = JSON.parse(localStorage.getItem(AUTH_PROFILE_KEY) || 'null');
+    return profile?.username && profile?.salt && profile?.hash ? profile : null;
+  } catch (_) { return null; }
+}
+
+function randomSalt() {
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) crypto.getRandomValues(bytes);
+  else bytes.forEach((_, index) => { bytes[index] = Math.floor(Math.random() * 256); });
+  return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function fallbackPasswordHash(value) {
+  let first = 0x811c9dc5, second = 0x9e3779b9;
+  for (let round = 0; round < 12000; round++) {
+    for (let index = 0; index < value.length; index++) {
+      first = Math.imul(first ^ value.charCodeAt(index), 0x01000193);
+      second = Math.imul(second ^ (value.charCodeAt(index) + round), 0x85ebca6b);
+    }
+  }
+  return `${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+async function hashPassword(password, salt) {
+  if (!globalThis.crypto?.subtle) return fallbackPasswordHash(`${salt}:${password}`);
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: encoder.encode(salt), iterations: 120000, hash: 'SHA-256' }, key, 256);
+  return [...new Uint8Array(bits)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function setAuthMode(profile) {
+  const isSetup = !profile;
+  $('#authEyebrow').textContent = isSetup ? '第一次使用' : '歡迎返嚟';
+  $('#authTitle').textContent = isSetup ? '建立你的登入帳戶' : '登入你的工作空間';
+  $('#authDescription').textContent = isSetup ? '設定登入名稱及密碼，下次就可以安全地返回文稿。' : '輸入名稱及密碼，繼續準備你的口報文稿。';
+  $('#authSubmit').textContent = isSetup ? '建立帳戶並進入' : '登入';
+  $('#authConfirmGroup').hidden = !isSetup;
+  $('#authPasswordConfirm').required = isSetup;
+  $('#authPassword').autocomplete = isSetup ? 'new-password' : 'current-password';
+  if (profile) $('#authUsername').value = profile.username;
+}
+
+function unlockApp(username) {
+  $('#authScreen').hidden = true;
+  $('#appShell').hidden = false;
+  $('#currentUser').textContent = username;
+  document.body.classList.add('authenticated');
+  requestAnimationFrame(renderPrompt);
+}
+
+function showLogin() {
+  const profile = readAuthProfile();
+  setAuthMode(profile);
+  $('#authError').textContent = '';
+  $('#authPassword').value = '';
+  $('#authPasswordConfirm').value = '';
+  $('#appShell').hidden = true;
+  $('#authScreen').hidden = false;
+  document.body.classList.remove('authenticated');
+  setTimeout(() => (profile ? $('#authPassword') : $('#authUsername')).focus(), 30);
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const profile = readAuthProfile();
+  const username = $('#authUsername').value.trim();
+  const password = $('#authPassword').value;
+  const confirmPassword = $('#authPasswordConfirm').value;
+  const error = $('#authError');
+  const submit = $('#authSubmit');
+  error.textContent = '';
+  if (username.length < 2) return void (error.textContent = '登入名稱最少需要 2 個字元。');
+  if (password.length < 6) return void (error.textContent = '密碼最少需要 6 個字元。');
+  if (!profile && password !== confirmPassword) return void (error.textContent = '兩次輸入嘅密碼並不相同。');
+  submit.disabled = true;
+  submit.textContent = profile ? '正在登入…' : '正在建立…';
+  try {
+    if (!profile) {
+      const salt = randomSalt();
+      const hash = await hashPassword(password, salt);
+      localStorage.setItem(AUTH_PROFILE_KEY, JSON.stringify({ username, salt, hash, version: 1 }));
+    } else {
+      const hash = await hashPassword(password, profile.salt);
+      if (username !== profile.username || hash !== profile.hash) {
+        error.textContent = '登入名稱或密碼不正確。';
+        return;
+      }
+    }
+    sessionStorage.setItem(AUTH_SESSION_KEY, '1');
+    unlockApp(username);
+  } catch (_) {
+    error.textContent = '瀏覽器未能保存登入資料，請檢查私隱設定。';
+  } finally {
+    submit.disabled = false;
+    submit.textContent = readAuthProfile() ? '登入' : '建立帳戶並進入';
+  }
+}
+
+function initAuth() {
+  const profile = readAuthProfile();
+  $('#authForm').addEventListener('submit', submitAuth);
+  $('#showPassword').addEventListener('change', event => {
+    const type = event.target.checked ? 'text' : 'password';
+    $('#authPassword').type = type;
+    $('#authPasswordConfirm').type = type;
+  });
+  $('#logoutBtn').addEventListener('click', () => {
+    if (state.listening) stopListening(false);
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    sessionStorage.removeItem(AUTH_SESSION_KEY);
+    showLogin();
+  });
+  if (profile && sessionStorage.getItem(AUTH_SESSION_KEY) === '1') unlockApp(profile.username);
+  else showLogin();
+}
 
 try {
   if (globalThis.pinyinPro && globalThis.PinyinTraditionalDict) pinyinPro.addTraditionalDict(PinyinTraditionalDict);
@@ -556,3 +677,4 @@ function init() {
   generateSegments(false);
 }
 init();
+initAuth();
