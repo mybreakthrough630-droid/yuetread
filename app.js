@@ -64,7 +64,8 @@ const state = {
   startedAt: 0, heardChars: 0, speed: 0, theme: 'light', position: 'center', frequency: 2,
   fontSize: 42, showNext: true, audioUrl: null,
   matchedChars: 0, matchConfidence: 0, segmentStartAt: 0, lastTranscriptLength: 0,
-  pendingAdvance: false, scripts: [], renderedSignature: '', subtitleLanguage: 'cantonese', lineFrame: 0
+  pendingAdvance: false, scripts: [], renderedSignature: '', subtitleLanguage: 'cantonese', lineFrame: 0,
+  recognitionTranscript: '', recognitionRestartTimer: 0
 };
 
 const SCRIPT_LIBRARY_KEY = 'yuetread_scripts_v1';
@@ -471,21 +472,90 @@ function navigate(delta) {
   renderPrompt();
 }
 
+function getBrowserInfo() {
+  const userAgent = navigator.userAgent || '';
+  const isIOS = /iPad|iPhone|iPod/i.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isEmbedded = /(WhatsApp|FBAN|FBAV|Instagram|Line\/|MicroMessenger)/i.test(userAgent);
+  const isSafari = /Safari/i.test(userAgent) && !/(CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo)/i.test(userAgent) && !isEmbedded;
+  return { isIOS, isEmbedded, isSafari, requiresSafari: isIOS && (!isSafari || isEmbedded) };
+}
+
+function showBrowserNotice(force = false) {
+  const notice = $('#browserNotice');
+  const browser = getBrowserInfo();
+  notice.hidden = !(force || browser.requiresSafari);
+  return browser;
+}
+
+async function copySiteUrl() {
+  const url = location.protocol === 'file:' ? 'https://mybreakthrough630-droid.github.io/yuetread/' : location.href.split('#')[0];
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (_) {
+    const input = document.createElement('textarea');
+    input.value = url; input.setAttribute('readonly', ''); input.style.position = 'fixed'; input.style.opacity = '0';
+    document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove();
+  }
+  const button = $('#copySiteUrlBtn');
+  button.textContent = '已複製';
+  setTimeout(() => { button.textContent = '複製網址'; }, 1800);
+}
+
 function setupRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
+  const browser = getBrowserInfo();
   const recognition = new SpeechRecognition();
-  recognition.lang = 'yue-Hant-HK'; recognition.continuous = true; recognition.interimResults = true;
+  let sessionTranscript = '';
+  let fatalError = false;
+  recognition.lang = 'yue-Hant-HK'; recognition.continuous = !browser.isIOS; recognition.interimResults = true; recognition.maxAlternatives = 1;
+  recognition.onstart = () => { sessionTranscript = ''; fatalError = false; };
   recognition.onresult = event => {
-    let transcript = '';
-    for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-    trackSpeech(transcript);
+    sessionTranscript = '';
+    for (let i = 0; i < event.results.length; i++) sessionTranscript += event.results[i][0].transcript;
+    trackSpeech(`${state.recognitionTranscript}${sessionTranscript}`);
   };
   recognition.onerror = event => {
-    if (event.error !== 'aborted') toast(event.error === 'not-allowed' ? '請允許瀏覽器使用麥克風' : '語音辨識暫時中斷');
+    if (event.error === 'no-speech') {
+      $('#trackingStatus').textContent = '未聽到聲音，正在重試';
+      return;
+    }
+    if (event.error === 'aborted' && state.listening) {
+      $('#trackingStatus').textContent = '正在重新連接語音';
+      return;
+    }
+    fatalError = true;
+    const messages = {
+      'not-allowed': '請在 Safari 允許咪高峰權限，再按「繼續朗讀」',
+      'service-not-allowed': '請確認 iPhone 已啟用 Siri，並使用 Safari 開啟',
+      'audio-capture': '未能使用咪高峰，請檢查 iPhone 私隱設定',
+      'network': '語音服務連線失敗，請檢查網絡後再試',
+      'language-not-supported': '此裝置暫未支援粵語語音識別'
+    };
+    const message = messages[event.error] || `語音識別中斷（${event.error || '未知錯誤'}）`;
+    if (browser.isIOS) showBrowserNotice(browser.requiresSafari || event.error === 'service-not-allowed');
     stopListening(false);
+    $('#trackingStatus').textContent = '語音識別未連接';
+    toast(message);
   };
-  recognition.onend = () => { if (state.listening) try { recognition.start(); } catch (_) {} };
+  recognition.onend = () => {
+    if (sessionTranscript) {
+      state.recognitionTranscript += sessionTranscript;
+      sessionTranscript = '';
+    }
+    if (!state.listening || fatalError || state.recognition !== recognition) return;
+    clearTimeout(state.recognitionRestartTimer);
+    $('#trackingStatus').textContent = '正在重新連接語音';
+    state.recognitionRestartTimer = setTimeout(() => {
+      if (!state.listening || state.recognition !== recognition) return;
+      try { recognition.start(); }
+      catch (_) {
+        stopListening(false);
+        $('#trackingStatus').textContent = '請再按一次繼續朗讀';
+        toast('Safari 已暫停語音服務，請再按一次「繼續朗讀」');
+      }
+    }, browser.isIOS ? 350 : 120);
+  };
   return recognition;
 }
 
@@ -546,18 +616,33 @@ function trackSpeech(transcript) {
 function startListening() {
   if (!state.segments.length) generateSegments();
   if (!state.segments.length) return;
+  const browser = showBrowserNotice();
+  if (browser.requiresSafari) {
+    $('#trackingStatus').textContent = '需要使用 Safari';
+    return toast('WhatsApp 內置瀏覽器未能穩定使用語音識別，請複製網址到 Safari 開啟');
+  }
   if (!state.recognition) state.recognition = setupRecognition();
-  if (!state.recognition) return toast('此瀏覽器不支援語音辨識，請使用 Chrome 或手動切換字幕');
+  if (!state.recognition) {
+    if (browser.isIOS) showBrowserNotice(true);
+    return toast(browser.isIOS ? '請使用 Safari，並確認 iPhone 已啟用 Siri' : '此瀏覽器不支援語音辨識，請使用 Chrome');
+  }
   state.listening = true; state.startedAt = Date.now(); state.heardChars = 0;
-  state.lastTranscriptLength = 0; state.segmentStartAt = 0;
-  try { state.recognition.start(); } catch (_) {}
+  state.lastTranscriptLength = 0; state.segmentStartAt = 0; state.recognitionTranscript = '';
+  try { state.recognition.start(); }
+  catch (_) {
+    state.listening = false; state.recognition = null;
+    $('#trackingStatus').textContent = '語音識別未能啟動';
+    return toast(browser.isIOS ? 'Safari 未能啟動語音服務，請檢查咪高峰及 Siri 設定' : '語音識別未能啟動，請再試一次');
+  }
   $('#micBtn').classList.add('listening'); $('#micLabel').textContent = '暫停追蹤';
   $('.live-stats').classList.add('active'); $('#trackingStatus').textContent = '正在跟隨語速';
 }
 
 function stopListening(showToast = true) {
   state.listening = false;
-  if (state.recognition) try { state.recognition.stop(); } catch (_) {}
+  clearTimeout(state.recognitionRestartTimer); state.recognitionRestartTimer = 0;
+  const recognition = state.recognition; state.recognition = null;
+  if (recognition) try { recognition.stop(); } catch (_) {}
   $('#micBtn').classList.remove('listening'); $('#micLabel').textContent = '繼續朗讀';
   $('.live-stats').classList.remove('active'); $('#trackingStatus').textContent = '已暫停';
   if (showToast) toast('進度已保留');
@@ -669,6 +754,7 @@ function deleteScript(id) {
 
 function init() {
   $('#charCount').textContent = $('#sourceText').value.length; updateWrittenMandarin(); loadScriptLibrary();
+  showBrowserNotice();
   $$('.tab').forEach(btn => btn.addEventListener('click', () => {
     $$('.tab').forEach(b=>b.classList.toggle('active',b===btn));
     $$('.tab-panel').forEach(p=>p.classList.remove('active')); $(`#${btn.dataset.tab}Panel`).classList.add('active');
@@ -690,6 +776,7 @@ function init() {
   $('#subtitleLanguage').addEventListener('click', e => { const button=e.target.closest('button'); if(button) setSubtitleLanguage(button.dataset.language); });
   $('#speakCantoneseBtn').addEventListener('click', () => speakCurrent('cantonese'));
   $('#speakMandarinBtn').addEventListener('click', () => speakCurrent('mandarin'));
+  $('#copySiteUrlBtn').addEventListener('click', copySiteUrl);
   $('#closeEditorBtn').addEventListener('click',closeEditor); $('#drawerBackdrop').addEventListener('click',closeEditor); $('#saveEditorBtn').addEventListener('click',saveEditor);
   $('#addLineBtn').addEventListener('click',()=>{ state.segments.push({id:Date.now(),source:'',text:'新增字幕'}); renderEditor(); $('#editorList').scrollTop=$('#editorList').scrollHeight; });
   $('#editorList').addEventListener('click',e=>{ if(e.target.classList.contains('delete-line')) { const row=e.target.closest('.editor-row'); state.segments=state.segments.filter(s=>String(s.id)!==row.dataset.id); renderEditor(); }});
