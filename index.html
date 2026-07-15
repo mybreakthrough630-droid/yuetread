@@ -77,6 +77,50 @@
           </div>
         </section>
 
+        <section class="prompter-section" id="prompterSection">
+          <div class="section-heading preview-heading">
+            <div><p class="step-label">03 · 開始朗讀</p><h2>同步提詞預覽</h2></div>
+            <div class="preview-tools">
+              <div class="subtitle-language" id="subtitleLanguage" aria-label="字幕語言">
+                <button class="active" data-language="cantonese">粵語字幕</button>
+                <button data-language="mandarin">普通話字幕</button>
+              </div>
+              <div class="live-stats"><span id="statusDot"></span><b id="trackingStatus">準備就緒</b><span class="divider"></span><span id="speedStat">— 字/分鐘</span></div>
+            </div>
+          </div>
+
+          <div class="browser-notice" id="browserNotice" role="alert" hidden>
+            <div>
+              <strong id="browserNoticeTitle">請用系統瀏覽器開啟語音追蹤</strong>
+              <p id="browserNoticeText">內置瀏覽器可能會中斷語音識別，請改用 Safari 或 Chrome。</p>
+            </div>
+            <div class="browser-notice-actions">
+              <a id="openPreferredBrowserBtn" href="#" hidden>用 Chrome 開啟</a>
+              <button id="copySiteUrlBtn" type="button">複製網址</button>
+            </div>
+          </div>
+
+          <div class="prompter light top" id="prompter">
+            <div class="tracking-legend" aria-label="逐字追蹤顏色說明"><span><i class="pending"></i>未讀</span><span><i class="active"></i>正在聽</span><span><i class="read"></i>已跟上</span></div>
+            <div class="speech-actions">
+              <button id="speakCantoneseBtn" title="用電腦朗讀目前粵語句子">◖)) 粵語朗讀</button>
+              <button id="speakMandarinBtn" title="用電腦朗讀目前普通話句子">◖)) 普通話朗讀</button>
+            </div>
+            <div class="safe-area">
+              <div class="prompt-content">
+                <div class="prompt-copy" id="promptCopy"></div>
+              </div>
+            </div>
+            <div class="prompter-controls">
+              <button class="round-btn" id="prevBtn" aria-label="上一句">‹</button>
+              <button class="mic-btn" id="micBtn"><span class="mic-symbol">●</span><span id="micLabel">開始朗讀</span></button>
+              <button class="round-btn" id="nextBtn" aria-label="下一句">›</button>
+            </div>
+            <div class="progress-track"><i id="progressBar"></i></div>
+          </div>
+          <p class="privacy-note">🔒 本應用不儲存語音；辨識音訊的處理方式以你的瀏覽器服務條款為準。</p>
+        </section>
+
         <section class="workspace-grid">
           <div class="source-card card">
             <div class="section-heading">
@@ -184,49 +228,6 @@
           </aside>
         </section>
 
-        <section class="prompter-section" id="prompterSection">
-          <div class="section-heading preview-heading">
-            <div><p class="step-label">03 · 開始朗讀</p><h2>同步提詞預覽</h2></div>
-            <div class="preview-tools">
-              <div class="subtitle-language" id="subtitleLanguage" aria-label="字幕語言">
-                <button class="active" data-language="cantonese">粵語字幕</button>
-                <button data-language="mandarin">普通話字幕</button>
-              </div>
-              <div class="live-stats"><span id="statusDot"></span><b id="trackingStatus">準備就緒</b><span class="divider"></span><span id="speedStat">— 字/分鐘</span></div>
-            </div>
-          </div>
-
-          <div class="browser-notice" id="browserNotice" role="alert" hidden>
-            <div>
-              <strong id="browserNoticeTitle">請用系統瀏覽器開啟語音追蹤</strong>
-              <p id="browserNoticeText">內置瀏覽器可能會中斷語音識別，請改用 Safari 或 Chrome。</p>
-            </div>
-            <div class="browser-notice-actions">
-              <a id="openPreferredBrowserBtn" href="#" hidden>用 Chrome 開啟</a>
-              <button id="copySiteUrlBtn" type="button">複製網址</button>
-            </div>
-          </div>
-
-          <div class="prompter light top" id="prompter">
-            <div class="tracking-legend" aria-label="逐字追蹤顏色說明"><span><i class="pending"></i>未讀</span><span><i class="active"></i>正在聽</span><span><i class="read"></i>已跟上</span></div>
-            <div class="speech-actions">
-              <button id="speakCantoneseBtn" title="用電腦朗讀目前粵語句子">◖)) 粵語朗讀</button>
-              <button id="speakMandarinBtn" title="用電腦朗讀目前普通話句子">◖)) 普通話朗讀</button>
-            </div>
-            <div class="safe-area">
-              <div class="prompt-content">
-                <div class="prompt-copy" id="promptCopy"></div>
-              </div>
-            </div>
-            <div class="prompter-controls">
-              <button class="round-btn" id="prevBtn" aria-label="上一句">‹</button>
-              <button class="mic-btn" id="micBtn"><span class="mic-symbol">●</span><span id="micLabel">開始朗讀</span></button>
-              <button class="round-btn" id="nextBtn" aria-label="下一句">›</button>
-            </div>
-            <div class="progress-track"><i id="progressBar"></i></div>
-          </div>
-          <p class="privacy-note">🔒 本應用不儲存語音；辨識音訊的處理方式以你的瀏覽器服務條款為準。</p>
-        </section>
       </main>
 
       <footer><span>粵讀 YuetRead</span><p>讓每一句粵語，都被清楚看見。</p><span>本地優先 · 私隱保障</span></footer>
