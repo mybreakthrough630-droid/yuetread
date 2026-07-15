@@ -4,7 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f4f1ea" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="粵讀" />
     <title>粵讀 · 智能提詞器</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;500;600;700&amp;family=Noto+Serif+HK:wght@600;700&amp;display=swap" rel="stylesheet" />
@@ -54,6 +58,7 @@
           <span>粵讀 <small>智能提詞器</small></span>
         </a>
         <div class="top-actions">
+          <button class="install-btn" id="installAppBtn" type="button" hidden>安裝到手機</button>
           <span class="user-pill" id="currentUser"></span>
           <button class="ghost-btn logout-btn" id="logoutBtn" type="button">登出</button>
         </div>

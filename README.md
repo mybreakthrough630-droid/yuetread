@@ -10,7 +10,16 @@
 python3 -m http.server 8080
 ```
 
-然後瀏覽 `http://localhost:8080`。建議使用最新版 Chrome，以啟用 `yue-Hant-HK` 粵語語音辨識。
+然後瀏覽 `http://localhost:8080`。桌面本機測試可以使用 localhost；Android 手機必須使用已部署的 HTTPS 網址，不能經 `http://電腦IP:8080` 使用咪高峰。
+
+## Android 安裝及權限
+
+1. 使用最新版 Android Chrome 開啟 HTTPS 網址，避免 WhatsApp、Facebook 等內置瀏覽器。
+2. 第一次按「開始朗讀」時，允許網站使用咪高峰。
+3. 網站出現「安裝到手機」後按下安裝；亦可從 Chrome 選單選擇「安裝應用程式」。
+4. 如果曾拒絕咪高峰，到 Chrome「網站設定 → 咪高峰」重新允許。
+
+應用程式會優先使用 `yue-Hant-HK` 辨識粵語；Android 裝置不支援時會自動切換到 `zh-HK` 兼容模式。
 
 ## 功能
 
