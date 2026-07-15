@@ -537,21 +537,6 @@ function hasSecureSpeechContext() {
   return window.isSecureContext || location.protocol === 'https:' || isLocalSecureOrigin();
 }
 
-async function ensureMicrophoneAccess() {
-  if (!hasSecureSpeechContext()) {
-    const error = new Error('insecure-context');
-    error.code = 'insecure-context';
-    throw error;
-  }
-  if (!navigator.mediaDevices?.getUserMedia) {
-    const error = new Error('media-devices-unavailable');
-    error.code = 'media-devices-unavailable';
-    throw error;
-  }
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  stream.getTracks().forEach(track => track.stop());
-}
-
 function getShareableUrl() {
   return location.protocol === 'file:' ? 'https://mybreakthrough630-droid.github.io/yuetread/' : location.href.split('#')[0];
 }
@@ -580,15 +565,25 @@ function setupRecognition() {
   let emptyCycles = 0;
   let languageIndex = 0;
   let languageFallbackPending = false;
+  let receivedAudio = false;
+  let detectedSpeech = false;
+  let receivedResult = false;
   const recognitionLanguages = browser.isAndroid ? ['yue-Hant-HK', 'zh-HK'] : ['yue-Hant-HK'];
   recognition.lang = recognitionLanguages[languageIndex]; recognition.continuous = !browser.isMobile; recognition.interimResults = true; recognition.maxAlternatives = 1;
   recognition.onstart = () => {
     sessionTranscript = ''; fatalError = false;
     if (state.listening) $('#trackingStatus').textContent = '正在聆聽，請開始朗讀';
   };
-  recognition.onaudiostart = () => { if (state.listening) $('#trackingStatus').textContent = '咪高峰已連接'; };
-  recognition.onspeechstart = () => { if (state.listening) $('#trackingStatus').textContent = '正在辨識粵語'; };
+  recognition.onaudiostart = () => {
+    receivedAudio = true;
+    if (state.listening) $('#trackingStatus').textContent = '咪高峰已連接';
+  };
+  recognition.onspeechstart = () => {
+    detectedSpeech = true;
+    if (state.listening) $('#trackingStatus').textContent = '已偵測到說話，正在辨識粵語';
+  };
   recognition.onresult = event => {
+    receivedResult = true;
     sessionTranscript = '';
     for (let i = 0; i < event.results.length; i++) sessionTranscript += event.results[i][0].transcript;
     if (sessionTranscript.trim()) emptyCycles = 0;
@@ -635,13 +630,27 @@ function setupRecognition() {
     } else emptyCycles++;
     if (!state.listening || fatalError || state.recognition !== recognition) return;
     if (languageFallbackPending) languageFallbackPending = false;
-    if (browser.isAndroid && emptyCycles >= 2 && languageIndex < recognitionLanguages.length - 1) {
+    if (browser.isAndroid && emptyCycles >= 1 && languageIndex < recognitionLanguages.length - 1) {
       languageIndex++; recognition.lang = recognitionLanguages[languageIndex]; emptyCycles = 0;
       toast('已切換 Android 粵語兼容模式');
-    } else if (browser.isAndroid && emptyCycles >= 3) {
+    } else if (browser.isAndroid && emptyCycles >= 5) {
       stopListening(false); showBrowserNotice(true);
-      $('#trackingStatus').textContent = '未收到咪高峰語音';
-      return toast('未收到語音，請確認 Chrome 嘅網站及應用程式咪高峰權限已允許');
+      if (!receivedAudio) {
+        $('#trackingStatus').textContent = 'Android 語音服務未能連接咪高峰';
+        $('#browserNoticeTitle').textContent = 'Android 語音服務未連接咪高峰';
+        $('#browserNoticeText').textContent = 'Chrome 權限雖然已允許，但系統語音服務未能取得音訊。請重新啟動 Chrome，再用一般 Chrome 分頁測試。';
+        return toast('語音服務未能連接咪高峰，唔係網站權限問題');
+      }
+      if (!detectedSpeech) {
+        $('#trackingStatus').textContent = '咪高峰已連接，但未偵測到說話';
+        $('#browserNoticeTitle').textContent = '咪高峰已連接，但未偵測到說話';
+        $('#browserNoticeText').textContent = '請檢查手機有冇其他程式佔用咪高峰，並用 Gboard 或 Google 語音輸入測試粵語。';
+        return toast('咪高峰已連接，但 Android 未偵測到說話');
+      }
+      $('#trackingStatus').textContent = '已偵測到聲音，但語音服務冇回傳文字';
+      $('#browserNoticeTitle').textContent = 'Android 語音服務冇回傳文字';
+      $('#browserNoticeText').textContent = '請更新 Google app／Speech Services，並在系統語音設定下載中文（香港）語言。如果 Gboard 粵語輸入都唔得，呢部手機未有可用嘅粵語辨識服務。';
+      return toast(receivedResult ? '收到空白辨識結果，請檢查系統粵語模型' : 'Android 語音服務冇回傳文字');
     }
     clearTimeout(state.recognitionRestartTimer);
     $('#trackingStatus').textContent = browser.isMobile ? '正在聆聽，請繼續朗讀' : '正在重新連接語音';
@@ -712,7 +721,7 @@ function trackSpeech(transcript) {
   renderPrompt();
 }
 
-async function startListening() {
+function startListening() {
   if (!state.segments.length) generateSegments();
   if (!state.segments.length) return;
   const browser = showBrowserNotice();
@@ -732,27 +741,10 @@ async function startListening() {
     if (browser.isMobile) showBrowserNotice(true);
     return toast(browser.isIOS ? '請使用 Safari，並確認 iPhone 已啟用 Siri' : '此瀏覽器不支援語音辨識，請使用最新版 Chrome');
   }
-  const micButton = $('#micBtn');
-  micButton.disabled = true;
-  $('#trackingStatus').textContent = '正在檢查咪高峰權限';
-  try {
-    await ensureMicrophoneAccess();
-  } catch (error) {
-    micButton.disabled = false;
-    state.recognition = null;
-    showBrowserNotice(true);
-    if (error?.code === 'insecure-context') return toast('手機語音辨識需要 HTTPS 安全連線');
-    $('#browserNoticeTitle').textContent = '請允許 Chrome 使用咪高峰';
-    $('#browserNoticeText').textContent = '請到 Chrome「網站設定 → 咪高峰」允許此網站，再按「繼續朗讀」。';
-    $('#trackingStatus').textContent = '咪高峰權限未允許';
-    return toast('未能使用咪高峰，請檢查 Chrome 權限');
-  }
-  micButton.disabled = false;
   state.listening = true; state.startedAt = Date.now(); state.heardChars = 0;
   state.lastTranscriptLength = 0; state.segmentStartAt = 0; state.recognitionTranscript = '';
   try { state.recognition.start(); }
   catch (_) {
-    micButton.disabled = false;
     state.listening = false; state.recognition = null;
     $('#trackingStatus').textContent = '語音識別未能啟動';
     return toast(browser.isIOS ? 'Safari 未能啟動語音服務，請檢查咪高峰及 Siri 設定' : 'Chrome 未能啟動語音服務，請檢查咪高峰權限');
