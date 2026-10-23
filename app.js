@@ -65,7 +65,8 @@ const state = {
   fontSize: 42, showNext: true, audioUrl: null,
   matchedChars: 0, matchConfidence: 0, segmentStartAt: 0, lastTranscriptLength: 0,
   pendingAdvance: false, scripts: [], renderedSignature: '', subtitleLanguage: 'cantonese', lineFrame: 0,
-  recognitionTranscript: '', recognitionRestartTimer: 0, deferredInstallPrompt: null
+  recognitionTranscript: '', recognitionRestartTimer: 0, deferredInstallPrompt: null,
+  latestTranscript: '', renderFrame: 0, readerMode: false, orientationLocked: false, readerFullscreen: false
 };
 
 const SCRIPT_LIBRARY_KEY = 'yuetread_scripts_v1';
@@ -215,6 +216,7 @@ function initAuth() {
     $('#authPassword').focus();
   });
   $('#logoutBtn').addEventListener('click', () => {
+    if (state.readerMode) toggleReaderMode();
     if (state.listening) stopListening(false);
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     sessionStorage.removeItem(AUTH_SESSION_KEY);
@@ -403,6 +405,9 @@ function generateSegments(shouldScroll = true) {
 
 function renderPrompt() {
   const wrap = $('#promptCopy');
+  $('#sentenceCounter').textContent = state.segments.length ? `${state.current + 1} / ${state.segments.length}` : '0 / 0';
+  $('#nextBtn').disabled = state.current >= state.segments.length - 1;
+  $('#prevBtn').disabled = state.current === 0;
   if (!state.segments.length) {
     wrap.innerHTML = '<div class="prompt-line current">準備好之後，你的字幕會在這裡出現。</div>';
     wrap.style.setProperty('--line-shift', '0px');
@@ -455,7 +460,9 @@ function updateCharacterStates(line, matched) {
     const isPunctuation = char.classList.contains('punctuation');
     const index = +(isPunctuation ? char.dataset.boundary : char.dataset.index);
     const status = isPunctuation ? (index <= matched && matched > 0 ? 'read' : 'pending') : (index < matched ? 'read' : index === matched && state.listening ? 'active' : 'pending');
-    char.classList.remove('read', 'active', 'pending'); char.classList.add(status);
+    if (!char.classList.contains(status)) {
+      char.classList.remove('read', 'active', 'pending'); char.classList.add(status);
+    }
   });
 }
 
@@ -475,13 +482,56 @@ function scheduleActiveLineToTop() {
 
 function resetWordTracking() {
   state.matchedChars = 0; state.matchConfidence = 0; state.segmentStartAt = 0;
-  state.lastTranscriptLength = 0; state.pendingAdvance = false;
+  state.lastTranscriptLength = 0; state.pendingAdvance = false; state.latestTranscript = '';
 }
 
 function navigate(delta) {
   if (!state.segments.length) return;
   state.current = Math.max(0, Math.min(state.segments.length - 1, state.current + delta));
-  state.matchedChars = 0; state.matchConfidence = 0; state.segmentStartAt = state.lastTranscriptLength;
+  state.matchedChars = 0; state.matchConfidence = 0; state.segmentStartAt = state.latestTranscript.length;
+  state.pendingAdvance = false;
+  updateRecognitionHints();
+  renderPrompt();
+  $('#trackingStatus').textContent = state.listening ? '已手動切句，繼續朗讀' : '手動閱讀';
+}
+
+function queuePromptRender() {
+  if (state.renderFrame) return;
+  state.renderFrame = requestAnimationFrame(() => { state.renderFrame = 0; renderPrompt(); });
+}
+
+function updateReaderSize() {
+  const portrait = window.innerHeight > window.innerWidth;
+  const section = $('#prompterSection');
+  section.style.setProperty('--reader-width', `${portrait ? window.innerHeight : window.innerWidth}px`);
+  section.style.setProperty('--reader-height', `${portrait ? window.innerWidth : window.innerHeight}px`);
+  section.classList.toggle('reader-rotated', state.readerMode && portrait);
+  scheduleActiveLineToTop();
+}
+
+async function toggleReaderMode() {
+  const section = $('#prompterSection');
+  if (state.readerMode) {
+    state.readerMode = false;
+    document.body.classList.remove('reader-mode');
+    section.classList.remove('reader-rotated');
+    if (state.orientationLocked) { screen.orientation?.unlock?.(); state.orientationLocked = false; }
+    if (document.fullscreenElement === section) await document.exitFullscreen().catch(() => {});
+  } else {
+    state.readerMode = true;
+    document.body.classList.add('reader-mode');
+    updateReaderSize();
+    if (section.requestFullscreen) {
+      await section.requestFullscreen().catch(() => {});
+      state.readerFullscreen = document.fullscreenElement === section;
+    }
+    if (screen.orientation?.lock) {
+      try { await screen.orientation.lock('landscape'); state.orientationLocked = true; } catch (_) { /* CSS rotation supports iPad without orientation lock. */ }
+    }
+  }
+  $('#readerModeBtn').textContent = state.readerMode ? '⤡ 退出橫向' : '⤢ 橫向閱讀';
+  $('#readerModeBtn').setAttribute('aria-pressed', String(state.readerMode));
+  updateReaderSize();
   renderPrompt();
 }
 
@@ -561,6 +611,7 @@ function setupRecognition() {
   const browser = getBrowserInfo();
   const recognition = new SpeechRecognition();
   let sessionTranscript = '';
+  let sessionParts = [];
   let fatalError = false;
   let emptyCycles = 0;
   let languageIndex = 0;
@@ -568,10 +619,13 @@ function setupRecognition() {
   let receivedAudio = false;
   let detectedSpeech = false;
   let receivedResult = false;
+  let hintsDisabled = false;
   const recognitionLanguages = browser.isAndroid ? ['yue-Hant-HK', 'zh-HK'] : ['yue-Hant-HK'];
-  recognition.lang = recognitionLanguages[languageIndex]; recognition.continuous = !browser.isMobile; recognition.interimResults = true; recognition.maxAlternatives = 1;
+  recognition.lang = recognitionLanguages[languageIndex];
+  recognition.continuous = !browser.isMobile; recognition.interimResults = true; recognition.maxAlternatives = 3;
   recognition.onstart = () => {
-    sessionTranscript = ''; fatalError = false;
+    sessionTranscript = ''; sessionParts = []; fatalError = false;
+    if (!hintsDisabled) updateRecognitionHints();
     if (state.listening) $('#trackingStatus').textContent = '正在聆聽，請開始朗讀';
   };
   recognition.onaudiostart = () => {
@@ -583,13 +637,39 @@ function setupRecognition() {
     if (state.listening) $('#trackingStatus').textContent = '已偵測到說話，正在辨識粵語';
   };
   recognition.onresult = event => {
+    if (!state.listening || state.recognition !== recognition) return;
     receivedResult = true;
-    sessionTranscript = '';
-    for (let i = 0; i < event.results.length; i++) sessionTranscript += event.results[i][0].transcript;
+    const parts = [];
+    for (let i = 0; i < event.results.length; i++) {
+      const result = event.results[i];
+      if (sessionParts[i]?.final || (i < event.resultIndex && sessionParts[i])) {
+        parts.push(sessionParts[i].text); continue;
+      }
+      // Rank browser alternatives against the current script, so a plausible
+      // script match can beat a homophone transcript.
+      let selected = result[0].transcript, bestScore = -Infinity;
+      for (let alternative = 0; alternative < Math.min(3, result.length); alternative++) {
+        const candidate = result[alternative].transcript;
+        const heard = normalize(`${state.recognitionTranscript}${parts.join('')}${candidate}`).slice(state.segmentStartAt);
+        const segment = state.segments[state.current];
+        const match = segment ? bestScriptMatch(heard, segment) : { utility: 0 };
+        const score = match.utility - alternative * .15;
+        if (score > bestScore) { selected = candidate; bestScore = score; }
+      }
+      parts.push(selected);
+      sessionParts[i] = { text: selected, final: result.isFinal };
+    }
+    sessionParts.length = event.results.length;
+    sessionTranscript = parts.join('');
     if (sessionTranscript.trim()) emptyCycles = 0;
     trackSpeech(`${state.recognitionTranscript}${sessionTranscript}`);
   };
   recognition.onerror = event => {
+    if (event.error === 'phrases-not-supported') {
+      hintsDisabled = true;
+      try { recognition.phrases = []; } catch (_) {}
+      return;
+    }
     if (event.error === 'no-speech') {
       $('#trackingStatus').textContent = '未聽到聲音，正在重試';
       return;
@@ -623,12 +703,12 @@ function setupRecognition() {
     toast(message);
   };
   recognition.onend = () => {
+    if (!state.listening || fatalError || state.recognition !== recognition) return;
     if (sessionTranscript) {
       state.recognitionTranscript += sessionTranscript;
       sessionTranscript = '';
       emptyCycles = 0;
     } else emptyCycles++;
-    if (!state.listening || fatalError || state.recognition !== recognition) return;
     if (languageFallbackPending) languageFallbackPending = false;
     if (browser.isAndroid && emptyCycles >= 1 && languageIndex < recognitionLanguages.length - 1) {
       languageIndex++; recognition.lang = recognitionLanguages[languageIndex]; emptyCycles = 0;
@@ -662,63 +742,75 @@ function setupRecognition() {
         $('#trackingStatus').textContent = '請再按一次繼續朗讀';
         toast(browser.isAndroid ? 'Chrome 已暫停語音服務，請再按一次「繼續朗讀」' : '語音服務已暫停，請再按一次「繼續朗讀」');
       }
-    }, browser.isMobile ? 450 : 120);
+    }, browser.isIOS ? 250 : browser.isAndroid ? 120 : 80);
   };
   return recognition;
 }
 
-function normalize(s) { return s.replace(/[\s，。！？,.!?、：:；;「」『』"']/g, '').toLowerCase(); }
-function similarity(a, b) {
-  a = normalize(a); b = normalize(b); if (!a || !b) return 0;
-  let hits = 0, cursor = 0;
-  for (const c of a) { const found = b.indexOf(c, cursor); if (found >= 0) { hits++; cursor = found + 1; } }
-  return hits / Math.min(a.length, b.length);
+function normalize(s) { return SpeechTracking.normalize(s, normalizeToTraditional); }
+const trackingSounds = new Map();
+function trackingSound(char, language) {
+  const key = `${language}:${char}`;
+  if (!trackingSounds.has(key)) {
+    const sound = getPronunciations(char, language)[0] || '';
+    trackingSounds.set(key, sound === '·' ? '' : sound);
+  }
+  return trackingSounds.get(key);
 }
 
-function matchReadingProgress(spoken, target) {
-  const heard = normalize(spoken), expected = normalize(target);
-  if (!heard || !expected) return { covered: 0, confidence: 0 };
-  let cursor = 0, matches = 0;
-  for (const char of heard) {
-    if (cursor >= expected.length) break;
-    if (char === expected[cursor]) { cursor++; matches++; continue; }
-    const nearby = expected.indexOf(char, cursor + 1);
-    if (nearby >= 0 && nearby - cursor <= 3) { cursor = nearby + 1; matches++; }
-  }
-  return { covered: cursor, confidence: matches / Math.max(1, Math.min(heard.length, cursor)) };
+function matchReadingProgress(spoken, target, language = 'cantonese') {
+  return SpeechTracking.align(normalize(spoken), normalize(target), char => trackingSound(char, language));
+}
+
+function bestScriptMatch(heard, segment) {
+  const source = matchReadingProgress(heard, segment.source, 'cantonese');
+  const written = matchReadingProgress(heard, segment.text, 'mandarin');
+  const match = source.utility >= written.utility ? source : written;
+  return { ...match, length: normalize(match === source ? segment.source : segment.text).length };
+}
+
+function updateRecognitionHints() {
+  const recognition = state.recognition;
+  if (!recognition || !('phrases' in recognition) || !globalThis.SpeechRecognitionPhrase) return;
+  try {
+    recognition.phrases = state.segments.slice(state.current, state.current + 2)
+      .map(segment => new SpeechRecognitionPhrase(getDisplayText(segment).slice(0, 120), 3));
+  } catch (_) { /* Contextual hints are optional on browsers that support them. */ }
 }
 
 function trackSpeech(transcript) {
-  if (!state.segments.length || state.pendingAdvance) return;
+  if (!state.segments.length) return;
   const normalizedTranscript = normalize(transcript);
-  if (normalizedTranscript.length < state.lastTranscriptLength) state.segmentStartAt = 0;
-  const addedChars = normalizedTranscript.length >= state.lastTranscriptLength ? normalizedTranscript.length - state.lastTranscriptLength : normalizedTranscript.length;
-  state.heardChars += addedChars;
+  // Interim results can shrink. Never rewind the sentence boundary to zero:
+  // that replays old speech against a manually selected sentence.
+  state.heardChars += Math.max(0, normalizedTranscript.length - state.lastTranscriptLength);
   state.lastTranscriptLength = normalizedTranscript.length;
-  const current = state.segments[state.current];
-  const currentSpeech = normalizedTranscript.slice(Math.min(state.segmentStartAt, normalizedTranscript.length));
-  const sourceMatch = matchReadingProgress(currentSpeech, current.source);
-  const displayMatch = matchReadingProgress(currentSpeech, current.text);
-  const sourceProgress = sourceMatch.covered / Math.max(1, normalize(current.source).length);
-  const textProgress = displayMatch.covered / Math.max(1, normalize(current.text).length);
-  const bestProgress = Math.max(sourceProgress, textProgress);
-  const bestConfidence = sourceProgress >= textProgress ? sourceMatch.confidence : displayMatch.confidence;
-  const displayLength = [...getDisplayText(current)].filter(isSpokenChar).length;
-  state.matchedChars = Math.max(state.matchedChars, Math.min(displayLength, Math.round(bestProgress * displayLength)));
-  state.matchConfidence = bestConfidence;
-  const threshold = state.frequency === 1 ? 1 : state.frequency === 2 ? .96 : .9;
-  if (bestProgress >= threshold && bestConfidence >= .55 && state.current < state.segments.length - 1) {
-    state.pendingAdvance = true; state.matchedChars = displayLength; renderPrompt();
-    setTimeout(() => {
-      state.current++; state.matchedChars = 0; state.matchConfidence = 0;
-      state.segmentStartAt = state.lastTranscriptLength; state.pendingAdvance = false; renderPrompt();
-    }, 60);
+  state.latestTranscript = normalizedTranscript;
+  let displayLength = 0;
+  // Keep the unconsumed tail: one speech event may contain several sentences.
+  for (let transitions = 0; transitions < 8; transitions++) {
+    const current = state.segments[state.current];
+    const currentSpeech = normalizedTranscript.slice(state.segmentStartAt);
+    const match = bestScriptMatch(currentSpeech, current);
+    const progress = match.covered / Math.max(1, match.length);
+    displayLength = [...getDisplayText(current)].filter(isSpokenChar).length;
+    if (match.confidence >= .6) {
+      state.matchedChars = Math.max(state.matchedChars, Math.min(displayLength, Math.round(progress * displayLength)));
+    }
+    state.matchConfidence = match.confidence;
+    const threshold = state.frequency === 1 ? 1 : state.frequency === 2 ? .96 : .9;
+    const enoughEvidence = match.exact >= Math.min(3, match.length);
+    if (progress < threshold || match.confidence < .72 || !enoughEvidence || state.current >= state.segments.length - 1) break;
+    state.segmentStartAt += match.consumed;
+    state.current++; state.matchedChars = 0; state.matchConfidence = 0;
+    updateRecognitionHints();
   }
   const mins = Math.max((Date.now() - state.startedAt) / 60000, .05);
   state.speed = Math.min(500, Math.round(state.heardChars / mins));
   $('#speedStat').textContent = `${state.speed} 字/分鐘`;
-  $('#trackingStatus').textContent = `跟到 ${state.matchedChars}/${displayLength} 字 · ${Math.round(bestConfidence * 100)}%`;
-  renderPrompt();
+  $('#trackingStatus').textContent = `跟到 ${state.matchedChars}/${displayLength} 字`;
+  $('#recognitionFeedback').textContent = `聽到：${transcript.slice(-90)}`;
+  queuePromptRender();
 }
 
 function startListening() {
@@ -742,7 +834,7 @@ function startListening() {
     return toast(browser.isIOS ? '請使用 Safari，並確認 iPhone 已啟用 Siri' : '此瀏覽器不支援語音辨識，請使用最新版 Chrome');
   }
   state.listening = true; state.startedAt = Date.now(); state.heardChars = 0;
-  state.lastTranscriptLength = 0; state.segmentStartAt = 0; state.recognitionTranscript = '';
+  state.lastTranscriptLength = 0; state.segmentStartAt = 0; state.recognitionTranscript = ''; state.latestTranscript = '';
   try { state.recognition.start(); }
   catch (_) {
     state.listening = false; state.recognition = null;
@@ -931,6 +1023,12 @@ function init() {
   $('#speakCantoneseBtn').addEventListener('click', () => speakCurrent('cantonese'));
   $('#speakMandarinBtn').addEventListener('click', () => speakCurrent('mandarin'));
   $('#copySiteUrlBtn').addEventListener('click', copySiteUrl);
+  $('#readerModeBtn').addEventListener('click', toggleReaderMode);
+  document.addEventListener('fullscreenchange', () => {
+    if (state.readerMode && state.readerFullscreen && !document.fullscreenElement) {
+      state.readerFullscreen = false; toggleReaderMode();
+    }
+  });
   $('#closeEditorBtn').addEventListener('click',closeEditor); $('#drawerBackdrop').addEventListener('click',closeEditor); $('#saveEditorBtn').addEventListener('click',saveEditor);
   $('#addLineBtn').addEventListener('click',()=>{ state.segments.push({id:Date.now(),source:'',text:'新增字幕'}); renderEditor(); $('#editorList').scrollTop=$('#editorList').scrollHeight; });
   $('#editorList').addEventListener('click',e=>{ if(e.target.classList.contains('delete-line')) { const row=e.target.closest('.editor-row'); state.segments=state.segments.filter(s=>String(s.id)!==row.dataset.id); renderEditor(); }});
@@ -946,8 +1044,14 @@ function init() {
   $('#audioTranscribeBtn').addEventListener('click', transcribeUploadedAudio);
   const dz=$('#dropzone'); ['dragenter','dragover'].forEach(type=>dz.addEventListener(type,e=>{e.preventDefault();dz.classList.add('dragover')})); ['dragleave','drop'].forEach(type=>dz.addEventListener(type,e=>{e.preventDefault();dz.classList.remove('dragover')})); dz.addEventListener('drop',e=>handleAudio(e.dataTransfer.files[0])); dz.addEventListener('click',e=>{if(e.target===dz||e.target.tagName==='STRONG'||e.target.tagName==='P')$('#audioFileInput').click()});
   $('#removeAudioBtn').addEventListener('click',()=>{if(state.audioUrl)URL.revokeObjectURL(state.audioUrl);state.audioUrl=null;$('#audioPlayer').removeAttribute('src');$('#dropzone').hidden=false;$('#audioReady').hidden=true;});
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeEditor();if((e.key==='ArrowRight'||e.key==='ArrowDown')&&!e.target.matches('textarea,input'))navigate(1);if((e.key==='ArrowLeft'||e.key==='ArrowUp')&&!e.target.matches('textarea,input'))navigate(-1);});
-  window.addEventListener('resize', renderPrompt);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeEditor(); if (state.readerMode) toggleReaderMode(); }
+    if ($('#appShell').hidden || e.target.closest('textarea,input,select,[contenteditable="true"]')) return;
+    if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key)) {
+      e.preventDefault(); navigate(['ArrowRight', 'ArrowDown'].includes(e.key) ? 1 : -1);
+    }
+  });
+  window.addEventListener('resize', () => { updateReaderSize(); queuePromptRender(); });
   generateSegments(false);
 }
 init();

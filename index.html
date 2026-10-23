@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;500;600;700&amp;family=Noto+Serif+HK:wght@600;700&amp;display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20261023" />
   </head>
   <body>
     <section class="auth-screen" id="authScreen" aria-labelledby="authTitle">
@@ -81,6 +81,7 @@
           <div class="section-heading preview-heading">
             <div><p class="step-label">03 · 開始朗讀</p><h2>同步提詞預覽</h2></div>
             <div class="preview-tools">
+              <button class="reader-mode-btn" id="readerModeBtn" type="button" aria-pressed="false">⤢ 橫向閱讀</button>
               <div class="subtitle-language" id="subtitleLanguage" aria-label="字幕語言">
                 <button class="active" data-language="cantonese">粵語字幕</button>
                 <button data-language="mandarin">普通話字幕</button>
@@ -114,10 +115,12 @@
             <div class="prompter-controls">
               <button class="round-btn" id="prevBtn" aria-label="上一句">‹</button>
               <button class="mic-btn" id="micBtn"><span class="mic-symbol">●</span><span id="micLabel">開始朗讀</span></button>
-              <button class="round-btn" id="nextBtn" aria-label="下一句">›</button>
+              <button class="manual-next-btn" id="nextBtn" type="button" title="立即跳下一句（右方向鍵）">下一句 <span aria-hidden="true">→</span></button>
             </div>
+            <span class="sentence-counter" id="sentenceCounter" aria-live="polite"></span>
             <div class="progress-track"><i id="progressBar"></i></div>
           </div>
+          <p class="recognition-feedback" id="recognitionFeedback" aria-live="off">即時跟讀 · 可隨時按「下一句」手動切換</p>
           <p class="privacy-note">🔒 本應用不儲存語音；辨識音訊的處理方式以你的瀏覽器服務條款為準。</p>
         </section>
 
@@ -246,6 +249,7 @@
     <script src="vendor/pinyin-pro.js"></script>
     <script src="vendor/pinyin-data.js"></script>
     <script src="vendor/to-jyutping.js"></script>
-    <script src="app.js"></script>
+    <script src="speech-tracking.js?v=20261023"></script>
+    <script src="app.js?v=20261023"></script>
   </body>
 </html>
