@@ -68,6 +68,7 @@ const state = {
   recognitionTranscript: '', recognitionRestartTimer: 0, deferredInstallPrompt: null,
   latestTranscript: '', renderFrame: 0, readerMode: false, orientationLocked: false, readerFullscreen: false
 };
+const cloud = { client: null, library: null, configured: false, scope: 'local', loadedCloudDraft: false };
 
 const SCRIPT_LIBRARY_KEY = 'yuetread_scripts_v1';
 const READER_PREFERENCES_KEY = 'yuetread_reader_preferences_v1';
@@ -222,7 +223,8 @@ function initAuth() {
     $('#authPasswordConfirm').value = '';
     $('#authPassword').focus();
   });
-  $('#logoutBtn').addEventListener('click', () => {
+  $('#logoutBtn').addEventListener('click', async () => {
+    if (cloud.library?.user && !await signOutCloud()) return;
     if (state.readerMode) toggleReaderMode();
     if (state.listening) stopListening(false);
     if ('speechSynthesis' in window) speechSynthesis.cancel();
@@ -1003,6 +1005,127 @@ function loadScriptLibrary() {
   renderScriptLibrary();
 }
 
+function visibleScripts() { return cloud.scope === 'cloud' ? (cloud.library?.scripts || []) : state.scripts; }
+
+function selectLibraryScope(scope) {
+  if (scope === 'cloud' && !cloud.library?.user) return toast('請先登入雲端帳戶');
+  cloud.scope = scope === 'cloud' ? 'cloud' : 'local';
+  $$('#libraryScope button').forEach(button => {
+    const selected = button.dataset.scope === cloud.scope;
+    button.classList.toggle('active', selected); button.setAttribute('aria-pressed', String(selected));
+  });
+  $('#saveScriptBtn').textContent = cloud.scope === 'cloud' ? '＋ 儲存到雲端文稿' : '＋ 儲存目前文稿';
+  $('#libraryStorageNote').textContent = cloud.scope === 'cloud' ? '先保存在此裝置，連線後同步至你的雲端帳戶。' : '本機文稿只儲存在這部裝置；可另外備份到雲端。';
+  renderScriptLibrary();
+}
+
+function renderCloudStatus() {
+  const library = cloud.library;
+  const signedIn = Boolean(library?.user);
+  $('#cloudAuthEntry').hidden = !cloud.configured;
+  $('#cloudLoginForm').hidden = !cloud.configured || signedIn;
+  $('#cloudAccountActions').hidden = !signedIn;
+  $('#libraryScope [data-scope="cloud"]').disabled = !signedIn;
+  $('#cloudAccountEmail').textContent = library?.user?.email || '';
+  const pending = Object.keys(library?.pending || {}).length;
+  const descriptions = {
+    ready: '正在載入你的雲端文稿', syncing: '正在同步…', synced: '已同步',
+    pending: `${pending} 份文稿待同步`, offline: pending ? `離線 · ${pending} 份待同步` : '離線 · 顯示此裝置快取',
+    error: pending ? `同步失敗 · ${pending} 份仍保存在此裝置` : '同步失敗 · 可按同步重試'
+  };
+  $('#cloudStatus').textContent = !cloud.configured ? '尚未連接雲端服務' : signedIn ? (descriptions[library.status] || '尚未同步') : '請登入雲端帳戶';
+  $('#cloudDescription').textContent = !cloud.configured ? '現有文稿仍保存在這部裝置；雲端服務啟用後，可使用同一電郵跨裝置存取。' : signedIn ? '其他裝置使用同一電郵登入，即可取回已同步文稿。' : '輸入電郵收取登入連結，各裝置使用同一電郵登入。';
+  $('#cloudSyncBtn').disabled = library?.status === 'syncing';
+  renderScriptLibrary();
+}
+
+async function sendCloudLogin(event, emailId, messageId) {
+  event.preventDefault();
+  if (!cloud.client) return;
+  const email = $(`#${emailId}`).value.trim();
+  const message = $(`#${messageId}`);
+  const button = $('button', event.currentTarget);
+  button.disabled = true; message.textContent = '正在發送登入連結…';
+  try {
+    const redirect = new URL('./', location.href);
+    if (redirect.protocol !== 'https:' && redirect.hostname !== 'localhost') throw new Error('HTTPS_REQUIRED');
+    const { error } = await cloud.client.auth.signInWithOtp({ email, options: { emailRedirectTo: redirect.href } });
+    if (error) throw error;
+    message.textContent = '登入連結已寄出，請在這部裝置開啟電郵內嘅連結。';
+  } catch (_) { message.textContent = '未能寄出登入連結，請檢查電郵及連線後再試。'; }
+  finally { button.disabled = false; }
+}
+
+async function signOutCloud() {
+  if (!cloud.client) return true;
+  const { error } = await cloud.client.auth.signOut({ scope: 'local' });
+  if (error) { toast('雲端帳戶未能登出，請連線後再試'); return false; }
+  return true;
+}
+
+function initCloudLibrary() {
+  const config = globalThis.YuetReadCloudConfig || {};
+  try {
+    const url = new URL(config.url);
+    const key = config.publishableKey || '';
+    let publicKey = key.startsWith('sb_publishable_');
+    if (!publicKey && key.split('.').length === 3) {
+      const payload = key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      publicKey = JSON.parse(atob(payload)).role === 'anon';
+    }
+    cloud.configured = url.protocol === 'https:' && publicKey;
+  } catch (_) { cloud.configured = false; }
+  if (cloud.configured) {
+    try {
+      cloud.client = supabase.createClient(config.url, config.publishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+      cloud.library = new YuetReadCloudLibrary({ client: cloud.client, storage: localStorage, online: () => navigator.onLine !== false, onChange: renderCloudStatus });
+      cloud.client.auth.onAuthStateChange((event, session) => {
+        const previousUser = cloud.library.user?.id;
+        cloud.library.setUser(session?.user || null);
+        if (session?.user) {
+          if (previousUser !== session.user.id) {
+            selectLibraryScope('cloud'); unlockApp(session.user.email || '雲端帳戶');
+            setTimeout(() => cloud.library.sync(), 0);
+          }
+        } else if (previousUser) {
+          if (state.readerMode) toggleReaderMode();
+          selectLibraryScope('local');
+          if (cloud.loadedCloudDraft) {
+            $('#sourceText').value = ''; $('#convertedText').value = ''; $('#scriptTitle').value = ''; $('#charCount').textContent = '0';
+            state.segments = []; state.current = 0; renderPrompt(); cloud.loadedCloudDraft = false;
+          }
+          if (state.listening) stopListening(false);
+          sessionStorage.removeItem(AUTH_SESSION_KEY); showLogin();
+        }
+        renderCloudStatus();
+      });
+    } catch (_) { cloud.configured = false; cloud.client = null; cloud.library = null; }
+  }
+  $('#cloudEntryForm').addEventListener('submit', event => sendCloudLogin(event, 'cloudEntryEmail', 'cloudEntryMessage'));
+  $('#cloudLoginForm').addEventListener('submit', event => sendCloudLogin(event, 'cloudEmail', 'cloudLoginMessage'));
+  $('#cloudSyncBtn').addEventListener('click', () => cloud.library?.sync());
+  $('#cloudSignOutBtn').addEventListener('click', signOutCloud);
+  $('#uploadLocalScriptsBtn').addEventListener('click', backupLocalScripts);
+  $('#libraryScope').addEventListener('click', event => { const button = event.target.closest('button'); if (button) selectLibraryScope(button.dataset.scope); });
+  $('#scriptSearch').addEventListener('input', renderScriptLibrary);
+  window.addEventListener('online', () => cloud.library?.sync());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) cloud.library?.sync(); });
+  renderCloudStatus();
+}
+
+async function backupLocalScripts() {
+  if (!cloud.library?.user) return toast('請先登入雲端帳戶');
+  if (!state.scripts.length) return toast('暫時冇本機文稿需要備份');
+  // Save stable cloud IDs before uploading: retrying cannot create duplicates.
+  const backup = state.scripts.map(script => ({ ...script }));
+  state.scripts = state.scripts.map(script => ({ ...script, cloudId: script.cloudId || crypto.randomUUID() }));
+  if (!persistScriptLibrary()) { state.scripts = backup; return; }
+  try {
+    for (const script of state.scripts) cloud.library.queue({ ...script, id: script.cloudId });
+    selectLibraryScope('cloud'); toast('已建立備份佇列，連線後會同步；本機文稿仍保留');
+  } catch (_) { toast('部分文稿未能加入備份，請確認瀏覽器儲存空間後重試'); }
+}
+
 function persistScriptLibrary() {
   try { localStorage.setItem(SCRIPT_LIBRARY_KEY, JSON.stringify(state.scripts)); return true; }
   catch (_) { toast('瀏覽器未能儲存文稿，請檢查私隱或儲存設定'); return false; }
@@ -1013,33 +1136,53 @@ function saveCurrentScript() {
   if (!source) return toast('請先輸入粵語口語稿');
   const converted = $('#convertedText').value.trim() || toMandarin(source);
   const fallbackTitle = source.replace(/[\n。！？!?]/g, ' ').trim().slice(0, 18) || '未命名文稿';
-  const script = { id: String(Date.now()), title: $('#scriptTitle').value.trim() || fallbackTitle, source, converted, savedAt: new Date().toISOString() };
+  const script = { id: crypto.randomUUID(), title: $('#scriptTitle').value.trim() || fallbackTitle, source, converted, savedAt: new Date().toISOString() };
+  if (cloud.scope === 'cloud') {
+    try { cloud.library.queue(script); $('#scriptTitle').value = ''; toast('文稿已保存在此裝置，正在安排雲端同步'); }
+    catch (_) { toast('文稿未能儲存，請檢查登入狀態及瀏覽器儲存空間'); }
+    return;
+  }
+  const previous = [...state.scripts];
   state.scripts.unshift(script);
   if (persistScriptLibrary()) {
     $('#scriptTitle').value = ''; renderScriptLibrary(); toast(`已儲存「${script.title}」`);
-  }
+  } else state.scripts = previous;
 }
 
 function renderScriptLibrary() {
-  $('#scriptCount').textContent = `${state.scripts.length} 份文稿`;
-  $('#scriptList').innerHTML = state.scripts.map(script => {
+  const scripts = visibleScripts();
+  const query = ($('#scriptSearch')?.value || '').trim().toLocaleLowerCase();
+  const filtered = scripts.filter(script => !query || `${script.title} ${script.source} ${script.converted || ''}`.toLocaleLowerCase().includes(query));
+  $('#scriptCount').textContent = query ? `${filtered.length} / ${scripts.length} 份文稿` : `${scripts.length} 份文稿`;
+  $('#scriptList').dataset.empty = query ? '搵唔到符合搜尋嘅文稿' : cloud.scope === 'cloud' ? '暫時未有雲端文稿' : '暫時未有已儲存文稿';
+  $('#scriptList').innerHTML = filtered.map(script => {
     const date = new Date(script.savedAt).toLocaleDateString('zh-HK', { year: 'numeric', month: 'short', day: 'numeric' });
     return `<article class="script-item" data-id="${escapeHtml(script.id)}"><div><strong>${escapeHtml(script.title)}</strong><small>${date} · ${script.source.length} 字</small></div><div class="script-actions"><button class="load-script">載入</button><button class="delete-script" aria-label="刪除 ${escapeHtml(script.title)}">刪除</button></div></article>`;
   }).join('');
 }
 
 function loadScript(id) {
-  const script = state.scripts.find(item => item.id === id);
+  const script = visibleScripts().find(item => item.id === id);
   if (!script) return;
   $('#sourceText').value = script.source; $('#convertedText').value = script.converted || toMandarin(script.source);
   $('#charCount').textContent = script.source.length; $('#scriptTitle').value = script.title;
+  cloud.loadedCloudDraft = cloud.scope === 'cloud';
   toast(`已載入「${script.title}」`); $('#sourceText').focus();
 }
 
 function deleteScript(id) {
+  if (cloud.scope === 'cloud') {
+    const script = cloud.library?.scripts.find(item => item.id === id);
+    if (!script) return;
+    try { cloud.library.queue(script, true); toast('已移除文稿，刪除記錄會同步到其他裝置'); }
+    catch (_) { toast('未能移除文稿，請檢查瀏覽器儲存空間'); }
+    return;
+  }
+  const previous = [...state.scripts];
   const script = state.scripts.find(item => item.id === id);
   state.scripts = state.scripts.filter(item => item.id !== id);
   if (persistScriptLibrary()) { renderScriptLibrary(); toast(`已刪除「${script?.title || '文稿'}」`); }
+  else state.scripts = previous;
 }
 
 function isInstalledPWA() {
@@ -1084,8 +1227,8 @@ function init() {
   $('#charCount').textContent = $('#sourceText').value.length; updateWrittenMandarin(); loadScriptLibrary();
   showBrowserNotice();
   setupPWA();
-  $$('.tab').forEach(btn => btn.addEventListener('click', () => {
-    $$('.tab').forEach(b=>b.classList.toggle('active',b===btn));
+  $$('[role="tablist"] .tab').forEach(btn => btn.addEventListener('click', () => {
+    $$('[role="tablist"] .tab').forEach(b=>b.classList.toggle('active',b===btn));
     $$('.tab-panel').forEach(p=>p.classList.remove('active')); $(`#${btn.dataset.tab}Panel`).classList.add('active');
   }));
   $('#sourceText').addEventListener('input', e => { $('#charCount').textContent=e.target.value.length; updateWrittenMandarin(); });
@@ -1154,3 +1297,4 @@ function init() {
 }
 init();
 initAuth();
+initCloudLibrary();
