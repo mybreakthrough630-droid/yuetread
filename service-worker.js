@@ -1,10 +1,10 @@
-const CACHE_NAME = 'yuetread-v6';
+const CACHE_NAME = 'yuetread-v7';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=20261023',
-  './app.js?v=20261023',
-  './speech-tracking.js?v=20261023',
+  './styles.css?v=20261028',
+  './app.js?v=20261028',
+  './speech-tracking.js?v=20261028',
   './manifest.webmanifest',
   './icons/icon.svg',
   './vendor/opencc-cn2t.js',

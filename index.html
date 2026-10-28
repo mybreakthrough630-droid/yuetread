@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;500;600;700&amp;family=Noto+Serif+HK:wght@600;700&amp;display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20261023" />
+    <link rel="stylesheet" href="styles.css?v=20261028" />
   </head>
   <body>
     <section class="auth-screen" id="authScreen" aria-labelledby="authTitle">
@@ -82,6 +82,16 @@
             <div><p class="step-label">03 · 開始朗讀</p><h2>同步提詞預覽</h2></div>
             <div class="preview-tools">
               <button class="reader-mode-btn" id="readerModeBtn" type="button" aria-pressed="false">⤢ 橫向閱讀</button>
+              <button class="reader-mode-btn" id="mirrorModeBtn" type="button" aria-pressed="false" title="循環切換：正常、左右鏡像、上下鏡像、雙向鏡像">⇆ 鏡像：關</button>
+              <details class="reader-settings">
+                <summary>閱讀設定</summary>
+                <div class="reader-settings-panel">
+                  <label for="readerPosition">顯示位置</label>
+                  <select id="readerPosition"><option value="top">上</option><option value="center">中</option><option value="bottom">下</option></select>
+                  <label for="readerWidth">文章闊度 <output id="readerWidthOutput">90%</output></label>
+                  <input id="readerWidth" type="range" min="40" max="100" step="5" value="90" />
+                </div>
+              </details>
               <div class="subtitle-language" id="subtitleLanguage" aria-label="字幕語言">
                 <button class="active" data-language="cantonese">粵語字幕</button>
                 <button data-language="mandarin">普通話字幕</button>
@@ -109,7 +119,7 @@
             </div>
             <div class="safe-area">
               <div class="prompt-content">
-                <div class="prompt-copy" id="promptCopy"></div>
+                <div class="prompt-mirror" id="promptMirror"><div class="prompt-copy" id="promptCopy"></div></div>
               </div>
             </div>
             <div class="prompter-controls">
@@ -217,6 +227,11 @@
               <input id="fontSize" type="range" min="28" max="72" value="42" />
             </div>
             <div class="setting-group">
+              <div class="range-label"><label for="articleWidth">文章闊度</label><output id="articleWidthOutput">90%</output></div>
+              <input id="articleWidth" type="range" min="40" max="100" step="5" value="90" />
+              <div class="range-ends"><span>窄 · 集中視線</span><span>闊 · 每行更多字</span></div>
+            </div>
+            <div class="setting-group">
               <label>顯示位置</label>
               <div class="position-picker" id="positionPicker">
                 <button data-value="top" class="active">上</button><button data-value="center">中</button><button data-value="bottom">下</button>
@@ -249,7 +264,7 @@
     <script src="vendor/pinyin-pro.js"></script>
     <script src="vendor/pinyin-data.js"></script>
     <script src="vendor/to-jyutping.js"></script>
-    <script src="speech-tracking.js?v=20261023"></script>
-    <script src="app.js?v=20261023"></script>
+    <script src="speech-tracking.js?v=20261028"></script>
+    <script src="app.js?v=20261028"></script>
   </body>
 </html>

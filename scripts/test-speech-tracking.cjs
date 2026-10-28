@@ -16,7 +16,7 @@ function element() {
   const classes = new Set();
   return {
     hidden: false, value: '', textContent: '', innerHTML: '', disabled: false,
-    style: { setProperty() {} }, classList: { add: x => classes.add(x), remove: x => classes.delete(x), contains: x => classes.has(x), toggle() {} },
+    style: { values: {}, setProperty(key, value) { this.values[key] = value; } }, classList: { add: x => classes.add(x), remove: x => classes.delete(x), contains: x => classes.has(x), toggle() {} },
     querySelector() { return null; }, querySelectorAll() { return []; }, setAttribute() {}, focus() {}
   };
 }
@@ -77,6 +77,23 @@ async function checkReaderMode() {
   assert.equal(getNode('#readerModeBtn').textContent, '⤡ 退出橫向');
   await vm.runInContext(`toggleReaderMode()`, context);
   assert.equal(vm.runInContext('state.readerMode', context), false);
-  console.log('PASS: normalization, omissions, filler, homophones, unrelated speech, sentence overflow, manual boundary, interim updates, Android restart, pause, voice selection and iPad rotation fallback');
+  let layoutFrame;
+  context.requestAnimationFrame = callback => { layoutFrame = callback; return 1; };
+  const units = [0, 0, 80, 80].map(offsetTop => ({ offsetTop, offsetHeight: 52 }));
+  getNode('#promptCopy').querySelectorAll = () => units;
+  getNode('.prompt-content').clientHeight = 300;
+  vm.runInContext('state.matchedChars = 2; setReaderPosition("top")', context); layoutFrame();
+  assert.equal(getNode('#promptMirror').style.top, '0px');
+  vm.runInContext('setReaderPosition("center")', context); layoutFrame();
+  assert.equal(getNode('#promptMirror').style.top, '114px');
+  vm.runInContext('setReaderPosition("bottom")', context); layoutFrame();
+  assert.equal(getNode('#promptMirror').style.top, '227px');
+  assert.equal(getNode('#promptCopy').style.values['--line-shift'], '-80px');
+  vm.runInContext('setArticleWidth(60); setMirrorMode("both")', context); layoutFrame();
+  assert.equal(getNode('#prompter').style.values['--article-width'], '60%');
+  assert.equal(getNode('#readerWidthOutput').textContent, '60%');
+  assert.equal(getNode('#promptMirror').style.values['--mirror-x'], -1);
+  assert.equal(getNode('#promptMirror').style.values['--mirror-y'], -1);
+  console.log('PASS: speech tracking, iPad rotation fallback, active-row top/centre/bottom anchors, width synchronization and mirroring');
 }
 checkReaderMode().catch(error => { console.error(error); process.exitCode = 1; });

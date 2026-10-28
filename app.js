@@ -62,7 +62,7 @@ const cantoneseJyutping = {
 const state = {
   segments: [], current: 0, listening: false, recognition: null,
   startedAt: 0, heardChars: 0, speed: 0, theme: 'light', position: 'top', frequency: 2,
-  fontSize: 42, showNext: true, audioUrl: null,
+  fontSize: 42, showNext: true, audioUrl: null, articleWidth: 90, mirrorMode: 'off',
   matchedChars: 0, matchConfidence: 0, segmentStartAt: 0, lastTranscriptLength: 0,
   pendingAdvance: false, scripts: [], renderedSignature: '', subtitleLanguage: 'cantonese', lineFrame: 0,
   recognitionTranscript: '', recognitionRestartTimer: 0, deferredInstallPrompt: null,
@@ -70,6 +70,13 @@ const state = {
 };
 
 const SCRIPT_LIBRARY_KEY = 'yuetread_scripts_v1';
+const READER_PREFERENCES_KEY = 'yuetread_reader_preferences_v1';
+const MIRROR_MODES = [
+  { value: 'off', label: '⇆ 鏡像：關', x: 1, y: 1 },
+  { value: 'horizontal', label: '⇆ 左右鏡像', x: -1, y: 1 },
+  { value: 'vertical', label: '⇅ 上下鏡像', x: 1, y: -1 },
+  { value: 'both', label: '⤡ 雙向鏡像', x: -1, y: -1 }
+];
 const AUTH_PROFILE_KEY = 'yuetread_auth_v1';
 const AUTH_SESSION_KEY = 'yuetread_authenticated_v1';
 const AUTH_CREDENTIALS_VERSION = 2;
@@ -471,13 +478,89 @@ function scheduleActiveLineToTop() {
   state.lineFrame = requestAnimationFrame(() => {
     const wrap = $('#promptCopy');
     const units = $$('.prompt-line.current .char-unit', wrap);
-    if (!units.length) return wrap.style.setProperty('--line-shift', '0px');
+    if (!units.length) {
+      wrap.style.setProperty('--line-shift', '0px');
+      $('#promptMirror').style.top = '0px';
+      return;
+    }
     const activeIndex = Math.min(state.matchedChars, units.length - 1);
     const firstRowTop = units[0].offsetTop;
     const activeRowTop = units[activeIndex].offsetTop;
     const rowShift = Math.max(0, activeRowTop - firstRowTop);
     wrap.style.setProperty('--line-shift', `${-rowShift}px`);
+    const rowUnits = units.filter(unit => Math.abs(unit.offsetTop - activeRowTop) < 2);
+    // Ruby annotations extend below the base character. Reserve their height
+    // inside the mirrored row so neither pinyin nor descenders are clipped.
+    const baseHeight = Math.max(...rowUnits.map(unit => unit.offsetHeight));
+    const annotation = Math.max(10, state.fontSize * .3);
+    const rowHeight = Math.ceil(baseHeight + annotation + 8);
+    const viewport = $('.prompt-content');
+    const available = Math.max(0, viewport.clientHeight - rowHeight);
+    const anchor = state.position === 'bottom' ? available : state.position === 'center' ? available / 2 : 0;
+    const mirror = $('#promptMirror');
+    mirror.style.top = `${Math.round(anchor)}px`;
+    mirror.style.height = `${rowHeight}px`;
   });
+}
+
+function persistReaderPreferences() {
+  try {
+    localStorage.setItem(READER_PREFERENCES_KEY, JSON.stringify({ theme: state.theme, position: state.position, articleWidth: state.articleWidth, mirrorMode: state.mirrorMode }));
+  } catch (_) { /* Reading controls still work when browser storage is unavailable. */ }
+}
+
+function setReaderTheme(theme) {
+  if (!['light', 'dark', 'focus'].includes(theme)) return;
+  state.theme = theme;
+  $('#prompter').classList.remove('light', 'dark', 'focus');
+  $('#prompter').classList.add(theme);
+  $$('#themePicker button').forEach(button => button.classList.toggle('active', button.dataset.value === theme));
+  persistReaderPreferences();
+}
+
+function setReaderPosition(position) {
+  if (!['top', 'center', 'bottom'].includes(position)) return;
+  state.position = position;
+  $('#prompter').classList.remove('top', 'center', 'bottom');
+  $('#prompter').classList.add(position);
+  $$('#positionPicker button').forEach(button => button.classList.toggle('active', button.dataset.value === position));
+  $('#readerPosition').value = position;
+  scheduleActiveLineToTop();
+  persistReaderPreferences();
+}
+
+function setArticleWidth(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return;
+  state.articleWidth = Math.max(40, Math.min(100, Math.round(number / 5) * 5));
+  $('#prompter').style.setProperty('--article-width', `${state.articleWidth}%`);
+  for (const id of ['articleWidth', 'readerWidth']) {
+    $(`#${id}`).value = state.articleWidth;
+    $(`#${id}Output`).textContent = `${state.articleWidth}%`;
+  }
+  scheduleActiveLineToTop();
+  persistReaderPreferences();
+}
+
+function setMirrorMode(value) {
+  const mode = MIRROR_MODES.find(item => item.value === value);
+  if (!mode) return;
+  state.mirrorMode = mode.value;
+  $('#promptMirror').style.setProperty('--mirror-x', mode.x);
+  $('#promptMirror').style.setProperty('--mirror-y', mode.y);
+  $('#mirrorModeBtn').textContent = mode.label;
+  $('#mirrorModeBtn').setAttribute('aria-pressed', String(value !== 'off'));
+  scheduleActiveLineToTop();
+  persistReaderPreferences();
+}
+
+function loadReaderPreferences() {
+  let preferences = {};
+  try { preferences = JSON.parse(localStorage.getItem(READER_PREFERENCES_KEY) || '{}') || {}; } catch (_) {}
+  setReaderTheme(['light', 'dark', 'focus'].includes(preferences.theme) ? preferences.theme : 'light');
+  setReaderPosition(['top', 'center', 'bottom'].includes(preferences.position) ? preferences.position : 'top');
+  setArticleWidth(preferences.articleWidth ?? 90);
+  setMirrorMode(MIRROR_MODES.some(mode => mode.value === preferences.mirrorMode) ? preferences.mirrorMode : 'off');
 }
 
 function resetWordTracking() {
@@ -1024,6 +1107,13 @@ function init() {
   $('#speakMandarinBtn').addEventListener('click', () => speakCurrent('mandarin'));
   $('#copySiteUrlBtn').addEventListener('click', copySiteUrl);
   $('#readerModeBtn').addEventListener('click', toggleReaderMode);
+  $('#mirrorModeBtn').addEventListener('click', () => {
+    const index = MIRROR_MODES.findIndex(mode => mode.value === state.mirrorMode);
+    setMirrorMode(MIRROR_MODES[(index + 1) % MIRROR_MODES.length].value);
+  });
+  $('#readerPosition').addEventListener('change', event => setReaderPosition(event.target.value));
+  $('#readerWidth').addEventListener('input', event => setArticleWidth(event.target.value));
+  $('#articleWidth').addEventListener('input', event => setArticleWidth(event.target.value));
   document.addEventListener('fullscreenchange', () => {
     if (state.readerMode && state.readerFullscreen && !document.fullscreenElement) {
       state.readerFullscreen = false; toggleReaderMode();
@@ -1035,9 +1125,15 @@ function init() {
   $('#fontSize').addEventListener('input',e=>{state.fontSize=+e.target.value;$('#fontSizeOutput').textContent=`${state.fontSize} px`;$('#promptCopy').style.fontSize=`${state.fontSize}px`;renderPrompt();});
   $('#frequency').addEventListener('input',e=>{state.frequency=+e.target.value;$('#frequencyOutput').textContent=['','較慢','適中','靈敏'][state.frequency];});
   $('#showNext').addEventListener('change',e=>{state.showNext=e.target.checked;renderPrompt();});
-  $('#themePicker').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;$$('button',$('#themePicker')).forEach(x=>x.classList.toggle('active',x===b));$('#prompter').classList.remove('light','dark','focus');$('#prompter').classList.add(b.dataset.value);});
-  $('#positionPicker').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;$$('button',$('#positionPicker')).forEach(x=>x.classList.toggle('active',x===b));$('#prompter').classList.remove('top','center','bottom');$('#prompter').classList.add(b.dataset.value);});
-  $('#resetSettingsBtn').addEventListener('click',()=>{ $('#fontSize').value=42;$('#fontSize').dispatchEvent(new Event('input'));$('#frequency').value=2;$('#frequency').dispatchEvent(new Event('input'));$('#showNext').checked=true;state.showNext=true;$('#themePicker [data-value="light"]').click();$('#positionPicker [data-value="top"]').click();renderPrompt();toast('已重設提詞設定');});
+  $('#themePicker').addEventListener('click', event => { const button = event.target.closest('button'); if (button) setReaderTheme(button.dataset.value); });
+  $('#positionPicker').addEventListener('click', event => { const button = event.target.closest('button'); if (button) setReaderPosition(button.dataset.value); });
+  $('#resetSettingsBtn').addEventListener('click', () => {
+    $('#fontSize').value = 42; $('#fontSize').dispatchEvent(new Event('input'));
+    $('#frequency').value = 2; $('#frequency').dispatchEvent(new Event('input'));
+    $('#showNext').checked = true; state.showNext = true;
+    setReaderTheme('light'); setReaderPosition('top'); setArticleWidth(90); setMirrorMode('off');
+    renderPrompt(); toast('已重設提詞設定');
+  });
   $('#importTextBtn').addEventListener('click',()=>$('#textFileInput').click());
   $('#textFileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(f){$('#sourceText').value=await f.text();$('#sourceText').dispatchEvent(new Event('input'));toast(`已匯入 ${f.name}`);}});
   $('#chooseAudioBtn').addEventListener('click',()=>$('#audioFileInput').click()); $('#audioFileInput').addEventListener('change',e=>handleAudio(e.target.files[0]));
@@ -1052,7 +1148,9 @@ function init() {
     }
   });
   window.addEventListener('resize', () => { updateReaderSize(); queuePromptRender(); });
+  loadReaderPreferences();
   generateSegments(false);
+  document.fonts?.ready.then(scheduleActiveLineToTop);
 }
 init();
 initAuth();
