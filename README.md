@@ -56,3 +56,11 @@ python3 -m http.server 8080
 ## 本地語言資料
 
 讀音及繁簡處理由專案內置的 `pinyin-pro`、`@pinyin-pro/data`、`ToJyutping` 和 `opencc-js` 完成，無需將稿件傳送至外部翻譯服務。第三方授權文件位於 `vendor/licenses/`。
+
+## 雲端文稿（待接通服務）
+
+雲端文稿介面、Supabase email 登入、每人獨立文稿庫、本機稿件備份、離線待同步、搜尋、刪除同步及重試邏輯已準備。`cloud-config.js` 目前留空；未連接真實 Supabase 專案及套用資料庫規則前，不會啟用雲端或上傳現有文稿。
+
+啟用步驟見 `cloud/SETUP.md`，資料庫結構與帳戶隔離規則見 `cloud/schema.sql`。實際上線前須用兩個真實帳戶驗證隔離，並測試兩部裝置同步；模擬測試不能代替這些驗收。
+
+本機驗證：`node scripts/test-cloud-library.cjs`。此測試模擬離線重載、跨裝置同步、帳戶切換、刪除傳播、重試、分頁及儲存失敗。

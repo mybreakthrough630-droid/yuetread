@@ -37,7 +37,7 @@ const context = vm.createContext({
   setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout() {},
   Map, Date
 });
-const app = fs.readFileSync(require.resolve('../app.js'), 'utf8').replace(/init\(\);\s*initAuth\(\);\s*$/, '');
+const app = fs.readFileSync(require.resolve('../app.js'), 'utf8').replace(/init\(\);\s*initAuth\(\);\s*(initCloudLibrary\(\);\s*)?$/, '');
 vm.runInContext(app, context);
 vm.runInContext(`
   state.segments = [

@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;500;600;700&amp;family=Noto+Serif+HK:wght@600;700&amp;display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20261028" />
+    <link rel="stylesheet" href="styles.css?v=20261028-cloud1" />
   </head>
   <body>
     <section class="auth-screen" id="authScreen" aria-labelledby="authTitle">
@@ -41,6 +41,15 @@
             <button class="auth-submit" id="authSubmit" type="submit">登入</button>
             <button class="auth-reset-btn" id="authResetBtn" type="button">忘記密碼？重設密碼</button>
           </form>
+          <div id="cloudAuthEntry" class="cloud-auth-entry" hidden>
+            <p>跨裝置使用雲端文稿</p>
+            <form id="cloudEntryForm" class="cloud-login-form">
+              <label class="input-label" for="cloudEntryEmail">雲端帳戶電郵</label>
+              <input id="cloudEntryEmail" type="email" autocomplete="email" required placeholder="你的電郵地址" />
+              <button type="submit" class="outline-btn">發送登入連結</button>
+            </form>
+            <p class="cloud-login-message" id="cloudEntryMessage" role="status"></p>
+          </div>
           <p class="auth-local-note">🔒 帳戶資料只會儲存在這部裝置；密碼不會以原文保存。</p>
         </div>
         <div class="auth-visual" aria-hidden="true">
@@ -199,12 +208,36 @@
                 <div><p class="step-label">口報文稿庫</p><h3>保存你的所有文稿</h3></div>
                 <span id="scriptCount">0 份文稿</span>
               </div>
+              <div class="cloud-panel">
+                <div class="cloud-panel-heading"><strong>☁ 雲端文稿</strong><span id="cloudStatus" role="status">尚未連接雲端服務</span></div>
+                <p id="cloudDescription">現有文稿仍保存在這部裝置；雲端服務啟用後，可使用同一電郵跨裝置存取。</p>
+                <form id="cloudLoginForm" class="cloud-login-form" hidden>
+                  <label class="input-label" for="cloudEmail">雲端帳戶電郵</label>
+                  <input id="cloudEmail" type="email" autocomplete="email" required placeholder="你的電郵地址" />
+                  <button type="submit" class="outline-btn">發送登入連結</button>
+                </form>
+                <p class="cloud-login-message" id="cloudLoginMessage" role="status"></p>
+                <div id="cloudAccountActions" class="cloud-account-actions" hidden>
+                  <span id="cloudAccountEmail"></span>
+                  <button id="cloudSyncBtn" class="outline-btn" type="button">↻ 同步文稿</button>
+                  <button id="cloudSignOutBtn" class="text-btn" type="button">登出雲端</button>
+                  <button id="uploadLocalScriptsBtn" class="outline-btn" type="button">將本機文稿備份到雲端</button>
+                </div>
+              </div>
+              <div class="library-toolbar">
+                <div class="tabs" id="libraryScope" aria-label="文稿儲存位置">
+                  <button class="tab active" type="button" data-scope="local" aria-pressed="true">本機文稿</button>
+                  <button class="tab" type="button" data-scope="cloud" aria-pressed="false" disabled>雲端文稿</button>
+                </div>
+                <label class="sr-only" for="scriptSearch">搜尋文稿名稱或內文</label>
+                <input id="scriptSearch" type="search" placeholder="搜尋名稱或內文…" />
+              </div>
               <div class="save-script-row">
                 <input id="scriptTitle" type="text" maxlength="40" placeholder="文稿名稱（例如：星期五產品介紹）" />
                 <button class="outline-btn save-script-btn" id="saveScriptBtn">＋ 儲存目前文稿</button>
               </div>
               <div class="script-list" id="scriptList"></div>
-              <p class="local-note">文稿只會儲存在這部裝置的瀏覽器內。</p>
+              <p class="local-note" id="libraryStorageNote">文稿只會儲存在這部裝置的瀏覽器內。</p>
             </section>
           </div>
 
@@ -264,7 +297,10 @@
     <script src="vendor/pinyin-pro.js"></script>
     <script src="vendor/pinyin-data.js"></script>
     <script src="vendor/to-jyutping.js"></script>
-    <script src="speech-tracking.js?v=20261028"></script>
-    <script src="app.js?v=20261028"></script>
+    <script src="speech-tracking.js?v=20261028-cloud1"></script>
+    <script src="cloud-config.js?v=20261028-cloud1"></script>
+    <script src="vendor/supabase.js"></script>
+    <script src="cloud-library.js?v=20261028-cloud1"></script>
+    <script src="app.js?v=20261028-cloud1"></script>
   </body>
 </html>

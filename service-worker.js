@@ -1,10 +1,13 @@
-const CACHE_NAME = 'yuetread-v7';
+const CACHE_NAME = 'yuetread-v8';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=20261028',
-  './app.js?v=20261028',
-  './speech-tracking.js?v=20261028',
+  './styles.css?v=20261028-cloud1',
+  './app.js?v=20261028-cloud1',
+  './speech-tracking.js?v=20261028-cloud1',
+  './cloud-config.js?v=20261028-cloud1',
+  './cloud-library.js?v=20261028-cloud1',
+  './vendor/supabase.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './vendor/opencc-cn2t.js',
